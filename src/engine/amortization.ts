@@ -15,7 +15,8 @@ import {
 
 /**
  * Generates the full amortization schedule based on loan parameters.
- * Supports French, German, and Flat rate methods with full grace period and microfinance fee logic.
+ * Supports French, German, Flat rate, and Interest on Balance (Interés sobre Saldo Deudor).
+ * Also incorporates disbursement fee (%) and administrative fee (% or fixed).
  */
 export function generateAmortizationSchedule(params: LoanParams): Installment[] {
   const {
@@ -31,6 +32,8 @@ export function generateAmortizationSchedule(params: LoanParams): Installment[] 
     firstPaymentDate,
     desgravamenRate,
     adminFee,
+    adminFeeType,
+    adminFeePercent,
   } = params;
 
   if (term <= 0 || principal <= 0) {
@@ -47,7 +50,6 @@ export function generateAmortizationSchedule(params: LoanParams): Installment[] 
 
   // Monthly desgravamen rate decimal
   const desgravamenDecimal = (desgravamenRate || 0) / 100;
-  const fixedAdminFee = round(adminFee || 0, 2);
 
   // Pre-calculate fixed amounts depending on method
   let frenchPMT = 0;
@@ -77,8 +79,13 @@ export function generateAmortizationSchedule(params: LoanParams): Installment[] 
     // 1. Insurance (Desgravamen) calculated on beginning balance
     const insurance = round(beginningBalance * desgravamenDecimal, 2);
 
-    // 2. Admin fee
-    const installmentAdminFee = fixedAdminFee;
+    // 2. Admin fee: percentage on beginning balance or fixed amount, or 0 if neither
+    let installmentAdminFee = 0;
+    if (adminFeeType === 'percentage' && adminFeePercent && adminFeePercent > 0) {
+      installmentAdminFee = round(beginningBalance * (adminFeePercent / 100), 2);
+    } else if (adminFee && adminFee > 0) {
+      installmentAdminFee = round(adminFee, 2);
+    }
 
     // 3. Interest & Principal according to method & grace state
     let interest = 0;
@@ -96,7 +103,6 @@ export function generateAmortizationSchedule(params: LoanParams): Installment[] 
       }
     } else {
       // Regular repayment period
-      // Recalculate French PMT right after grace period ends or on step 1 of grace exit
       if (method === 'french') {
         if (k === safeGracePeriods + 1) {
           frenchPMT = calculateFrenchInstallment(
@@ -108,11 +114,9 @@ export function generateAmortizationSchedule(params: LoanParams): Installment[] 
         interest = round(beginningBalance * periodicRate, 2);
 
         if (k === term) {
-          // Final installment: ensure exact zero balance
           principalAmortized = round(beginningBalance, 2);
         } else {
           principalAmortized = round(frenchPMT - interest, 2);
-          // Safety guard if rate or rounding causes negative principal
           if (principalAmortized < 0) principalAmortized = 0;
           if (principalAmortized > beginningBalance) principalAmortized = beginningBalance;
         }
@@ -129,6 +133,16 @@ export function generateAmortizationSchedule(params: LoanParams): Installment[] 
         } else {
           principalAmortized = constantGermanPrincipal;
         }
+      } else if (method === 'interest_balance') {
+        // Interés sobre saldo deudor: en cada período se calcula interés exacto sobre el saldo insoluto
+        // y se amortiza el saldo en partes iguales entre los períodos restantes
+        interest = round(beginningBalance * periodicRate, 2);
+        const periodsLeft = term - k + 1;
+        if (k === term || periodsLeft <= 1) {
+          principalAmortized = round(beginningBalance, 2);
+        } else {
+          principalAmortized = round(beginningBalance / periodsLeft, 2);
+        }
       } else if (method === 'flat') {
         // Flat rate: fixed interest and fixed principal
         interest = flatPeriodInterest;
@@ -143,7 +157,6 @@ export function generateAmortizationSchedule(params: LoanParams): Installment[] 
     // 4. Ending Balance calculation
     let endingBalance = 0;
     if (isGracePeriod && effectiveGraceType === 'total') {
-      // Interest capitalizes into ending balance
       endingBalance = round(beginningBalance + interest, 2);
     } else {
       endingBalance = round(Math.max(0, beginningBalance - principalAmortized), 2);
@@ -152,7 +165,6 @@ export function generateAmortizationSchedule(params: LoanParams): Installment[] 
     // 5. Total Installment
     let totalInstallment = 0;
     if (isGracePeriod && effectiveGraceType === 'total') {
-      // Borrower only pays administrative fees/insurance if any, or 0
       totalInstallment = round(insurance + installmentAdminFee, 2);
     } else {
       totalInstallment = round(
@@ -187,18 +199,31 @@ export function generateAmortizationSchedule(params: LoanParams): Installment[] 
 }
 
 /**
- * Computes executive loan summary metrics including total interest, repayment, and TCEA.
+ * Computes executive loan summary metrics including total interest, repayment, disbursement fee, and TCEA.
  */
 export function calculateLoanSummary(
   params: LoanParams,
   schedule: Installment[]
 ): LoanSummary {
+  // Calculate disbursement fee if percentage is provided
+  const disbursementFeePercent = params.disbursementFeePercent || 0;
+  const disbursementFee =
+    disbursementFeePercent > 0
+      ? round(params.principal * (disbursementFeePercent / 100), 2)
+      : params.disbursementFeeAmount
+      ? round(params.disbursementFeeAmount, 2)
+      : 0;
+
+  const netDisbursement = round(params.principal - disbursementFee, 2);
+
   if (schedule.length === 0) {
     return {
       totalPrincipal: 0,
       totalInterest: 0,
       totalInsurance: 0,
       totalAdminFee: 0,
+      disbursementFee: 0,
+      netDisbursement: 0,
       totalRepayment: 0,
       tcea: 0,
       totalLateFees: 0,
@@ -228,8 +253,9 @@ export function calculateLoanSummary(
     totalPaid += item.amountPaid;
   }
 
-  // TCEA Cash Flows: [ -disbursement, installment_1, installment_2, ... ]
-  const cashFlows = [-params.principal, ...schedule.map((item) => item.totalInstallment)];
+  // TCEA Cash Flows: [ -netDisbursement, installment_1, installment_2, ... ]
+  // Reflects real regulatory cost accounting for upfront disbursement deduction
+  const cashFlows = [-netDisbursement, ...schedule.map((item) => item.totalInstallment)];
   const tcea = calculateTCEA(cashFlows, params.frequency);
 
   const nonGraceSchedule = schedule.filter((i) => !i.isGracePeriod);
@@ -238,7 +264,6 @@ export function calculateLoanSummary(
   const finalInstallment = schedule[schedule.length - 1].totalInstallment;
   const averageInstallment = round(totalRepayment / schedule.length, 2);
 
-  // Outstanding balance = ending balance of the latest unpaid or partially paid installment
   const lastInstallment = schedule[schedule.length - 1];
   const outstandingBalance = round(
     Math.max(0, totalRepayment + totalLateFees - totalPaid),
@@ -250,6 +275,8 @@ export function calculateLoanSummary(
     totalInterest: round(totalInterest, 2),
     totalInsurance: round(totalInsurance, 2),
     totalAdminFee: round(totalAdminFee, 2),
+    disbursementFee,
+    netDisbursement,
     totalRepayment: round(totalRepayment, 2),
     tcea,
     totalLateFees: round(totalLateFees, 2),
@@ -262,13 +289,14 @@ export function calculateLoanSummary(
 }
 
 /**
- * Compares French, German, and Flat rate amortization methods side-by-side for the current loan parameters.
+ * Compares French, German, Interest on Balance, and Flat rate amortization methods side-by-side.
  */
 export function compareAmortizationMethods(params: LoanParams): MethodComparisonItem[] {
-  const methods: AmortizationMethod[] = ['french', 'german', 'flat'];
+  const methods: AmortizationMethod[] = ['french', 'german', 'interest_balance', 'flat'];
   const names: Record<AmortizationMethod, string> = {
     french: 'Francesa (Cuota Fija)',
     german: 'Alemana (Capital Fijo)',
+    interest_balance: 'Interés sobre Saldo (Recalculable)',
     flat: 'Tasa Fija / Interés Simple',
   };
 

@@ -16,24 +16,30 @@ export const CurrencyDisplay: React.FC<CurrencyDisplayProps> = ({
   baseCurrency,
   showEquivalent = false,
   className = '',
-  subClassName = 'text-xs text-slate-500 font-normal',
+  subClassName = 'text-[11px] text-slate-500 font-normal',
 }) => {
-  const { params, displayCurrency } = useCreditStore();
+  const { params, displayCurrency, bcvRate } = useCreditStore();
   const sourceCurrency = baseCurrency || params.currency;
   const targetCurrency = displayCurrency;
 
   const displayAmount =
     sourceCurrency === targetCurrency
       ? amount
-      : convertCurrency(amount, sourceCurrency, targetCurrency, params.exchangeRate);
+      : convertCurrency(
+          amount,
+          sourceCurrency,
+          targetCurrency,
+          params.exchangeRate,
+          params.bcvExchangeRate || bcvRate
+        );
 
   const formattedPrimary = formatCurrency(displayAmount, targetCurrency);
 
-  // If user is viewing in a different currency from the original loan, show the original equivalent
-  const showSubEquivalent =
-    showEquivalent && sourceCurrency !== targetCurrency;
+  // Si la moneda visual es distinta a la moneda del crédito, mostrar el equivalente original
+  const isDifferentCurrency = sourceCurrency !== targetCurrency;
+  const shouldShowSubEquivalent = showEquivalent && isDifferentCurrency;
 
-  const formattedEquivalent = showSubEquivalent
+  const formattedEquivalent = shouldShowSubEquivalent
     ? formatCurrency(amount, sourceCurrency)
     : null;
 

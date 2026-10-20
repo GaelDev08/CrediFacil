@@ -6,6 +6,7 @@ import type {
 } from '../types';
 import { calculateFrenchInstallment, calculatePeriodicRate, round } from './formulas';
 import { calculateLateFee } from './lateFees';
+import { convertCurrency } from './currency';
 
 export interface ApplyPaymentParams {
   schedule: Installment[];
@@ -24,30 +25,16 @@ export interface ApplyPaymentResult {
 }
 
 /**
- * Converts a payment amount to the loan currency based on the exchange rate.
+ * Converts a payment amount to the loan currency based on exchange rates (including BCV for VES).
  */
 export function convertPaymentCurrency(
   amount: number,
   fromCurrency: Currency,
   loanCurrency: Currency,
-  exchangeRate: number // e.g. 3.75 PEN per USD
+  exchangeRate: number = 3.75, // USD/PEN
+  bcvRate: number = 881.88 // USD/VES
 ): number {
-  if (fromCurrency === loanCurrency) {
-    return round(amount, 2);
-  }
-
-  // If loan is PEN and payment is in USD: PEN = USD * exchangeRate
-  if (loanCurrency === 'PEN' && fromCurrency === 'USD') {
-    return round(amount * exchangeRate, 2);
-  }
-
-  // If loan is USD and payment is in PEN: USD = PEN / exchangeRate
-  if (loanCurrency === 'USD' && fromCurrency === 'PEN') {
-    return round(amount / exchangeRate, 2);
-  }
-
-  // Generic fallback using 1:1 if unsupported direct pair
-  return round(amount, 2);
+  return convertCurrency(amount, fromCurrency, loanCurrency, exchangeRate, bcvRate);
 }
 
 /**
@@ -56,8 +43,8 @@ export function convertPaymentCurrency(
  * 2. Comisiones / Admin fees
  * 3. Seguros / Insurance
  * 4. Intereses compensatorios
- * 5. Capital exigible
- * 6. Extra capital prepayment
+ * 5. Capital corriente exigible
+ * 6. Excedente / Abono extraordinario a capital (Método Interés sobre Saldo: recálculo inmediato del crédito)
  */
 export function simulatePayment(params: ApplyPaymentParams): ApplyPaymentResult {
   const {
@@ -75,7 +62,8 @@ export function simulatePayment(params: ApplyPaymentParams): ApplyPaymentResult 
     amount,
     paymentCurrency,
     loanParams.currency,
-    loanParams.exchangeRate
+    loanParams.exchangeRate,
+    loanParams.bcvExchangeRate || 881.88
   );
 
   let cash = convertedAmount;
@@ -180,14 +168,14 @@ export function simulatePayment(params: ApplyPaymentParams): ApplyPaymentResult 
     }
   }
 
-  // Waterfall 6: Surplus cash (Prepayment to remaining loan principal)
+  // Waterfall 6: Surplus cash (Abono de más / Prepago a capital: Actualización del crédito)
   if (cash > 0) {
     allocation.extraPrepayment = cash;
     const unpaidInstallments = updatedSchedule.filter((i) => i.status !== 'paid');
 
     if (unpaidInstallments.length > 0) {
       if (prepaymentStrategy === 'reduce_term') {
-        // Apply surplus from the last installment backwards to cancel full periods
+        // Reducir Plazo: El cliente paga de más y cancela cuotas finales, terminando antes
         let surplus = cash;
         for (let i = updatedSchedule.length - 1; i >= 0; i--) {
           const inst = updatedSchedule[i];
@@ -205,15 +193,20 @@ export function simulatePayment(params: ApplyPaymentParams): ApplyPaymentResult 
             inst.paidDate = paymentDate;
           } else {
             inst.principal = round(inst.principal - surplus, 2);
-            inst.totalInstallment = round(inst.principal + inst.interest + inst.insurance + inst.adminFee, 2);
+            inst.totalInstallment = round(
+              inst.principal + inst.interest + inst.insurance + inst.adminFee,
+              2
+            );
             inst.remainingDue = inst.totalInstallment;
             surplus = 0;
           }
         }
         cash = surplus;
       } else {
-        // reduce_installment: Reduce current balance and recalculate remaining installments
-        const currentBalance = unpaidInstallments[0].beginningBalance - allocation.principalPaid - cash;
+        // Reducir Cuota (Interés sobre Saldo): Se deduce el excedente del saldo insoluto
+        // y se actualizan todas las cuotas restantes con el nuevo saldo deudor menor
+        const currentBalance =
+          unpaidInstallments[0].beginningBalance - allocation.principalPaid - cash;
         const newBalance = Math.max(0, currentBalance);
         const remainingCount = unpaidInstallments.length;
         const periodicRate = calculatePeriodicRate(
@@ -222,26 +215,73 @@ export function simulatePayment(params: ApplyPaymentParams): ApplyPaymentResult 
           loanParams.frequency
         );
 
-        if (loanParams.method === 'french' && remainingCount > 0) {
-          const newPmt = calculateFrenchInstallment(newBalance, periodicRate, remainingCount);
-          let rollingBalance = newBalance;
+        if (remainingCount > 0) {
+          if (loanParams.method === 'french') {
+            const newPmt = calculateFrenchInstallment(newBalance, periodicRate, remainingCount);
+            let rollingBalance = newBalance;
 
-          unpaidInstallments.forEach((inst, idx) => {
-            inst.beginningBalance = round(rollingBalance, 2);
-            inst.interest = round(rollingBalance * periodicRate, 2);
-            if (idx === remainingCount - 1) {
-              inst.principal = round(rollingBalance, 2);
-            } else {
-              inst.principal = round(newPmt - inst.interest, 2);
-            }
-            inst.endingBalance = round(Math.max(0, rollingBalance - inst.principal), 2);
-            inst.totalInstallment = round(
-              inst.principal + inst.interest + inst.insurance + inst.adminFee,
-              2
-            );
-            inst.remainingDue = inst.totalInstallment;
-            rollingBalance = inst.endingBalance;
-          });
+            unpaidInstallments.forEach((inst, idx) => {
+              inst.beginningBalance = round(rollingBalance, 2);
+              inst.interest = round(rollingBalance * periodicRate, 2);
+              if (idx === remainingCount - 1) {
+                inst.principal = round(rollingBalance, 2);
+              } else {
+                inst.principal = round(newPmt - inst.interest, 2);
+                if (inst.principal > rollingBalance) inst.principal = rollingBalance;
+              }
+              inst.endingBalance = round(Math.max(0, rollingBalance - inst.principal), 2);
+              inst.totalInstallment = round(
+                inst.principal + inst.interest + inst.insurance + inst.adminFee,
+                2
+              );
+              inst.remainingDue = inst.totalInstallment;
+              rollingBalance = inst.endingBalance;
+            });
+          } else if (
+            loanParams.method === 'german' ||
+            loanParams.method === 'interest_balance'
+          ) {
+            // Método Interés sobre Saldo / Alemán:
+            // Interés calculado rigurosamente sobre el saldo remanente menor
+            const constantCapital = round(newBalance / remainingCount, 2);
+            let rollingBalance = newBalance;
+
+            unpaidInstallments.forEach((inst, idx) => {
+              inst.beginningBalance = round(rollingBalance, 2);
+              inst.interest = round(rollingBalance * periodicRate, 2);
+              if (idx === remainingCount - 1) {
+                inst.principal = round(rollingBalance, 2);
+              } else {
+                inst.principal = constantCapital;
+                if (inst.principal > rollingBalance) inst.principal = rollingBalance;
+              }
+              inst.endingBalance = round(Math.max(0, rollingBalance - inst.principal), 2);
+              inst.totalInstallment = round(
+                inst.principal + inst.interest + inst.insurance + inst.adminFee,
+                2
+              );
+              inst.remainingDue = inst.totalInstallment;
+              rollingBalance = inst.endingBalance;
+            });
+          } else if (loanParams.method === 'flat') {
+            // Flat rate: recálculo sobre nuevo saldo
+            const newFlatInterest = round(newBalance * periodicRate, 2);
+            const newFlatPrincipal = round(newBalance / remainingCount, 2);
+            let rollingBalance = newBalance;
+
+            unpaidInstallments.forEach((inst, idx) => {
+              inst.beginningBalance = round(rollingBalance, 2);
+              inst.interest = newFlatInterest;
+              inst.principal = idx === remainingCount - 1 ? round(rollingBalance, 2) : newFlatPrincipal;
+              inst.endingBalance = round(Math.max(0, rollingBalance - inst.principal), 2);
+              inst.totalInstallment = round(
+                inst.principal + inst.interest + inst.insurance + inst.adminFee,
+                2
+              );
+              inst.remainingDue = inst.totalInstallment;
+              rollingBalance = inst.endingBalance;
+            });
+          }
         }
         cash = 0;
       }
@@ -255,7 +295,10 @@ export function simulatePayment(params: ApplyPaymentParams): ApplyPaymentResult 
     amount,
     currency: paymentCurrency,
     convertedAmount,
-    exchangeRateUsed: loanParams.exchangeRate,
+    exchangeRateUsed:
+      paymentCurrency === 'VES' || loanParams.currency === 'VES'
+        ? loanParams.bcvExchangeRate || 881.88
+        : loanParams.exchangeRate,
     targetInstallmentNumber,
     prepaymentStrategy,
     allocation: {
@@ -272,7 +315,13 @@ export function simulatePayment(params: ApplyPaymentParams): ApplyPaymentResult 
         : ''
     }: Mora: ${allocation.lateFeePaid.toFixed(2)}, Interés: ${allocation.interestPaid.toFixed(2)}, Capital: ${(
       allocation.principalPaid + allocation.extraPrepayment
-    ).toFixed(2)}`,
+    ).toFixed(2)}${
+      allocation.extraPrepayment > 0
+        ? ` [Abono Extra a Capital: ${allocation.extraPrepayment.toFixed(2)} - Crédito actualizado con método Interés sobre Saldo (${
+            prepaymentStrategy === 'reduce_term' ? 'Reducción de Plazo' : 'Reducción de Cuota'
+          })]`
+        : ''
+    }`,
   };
 
   return {

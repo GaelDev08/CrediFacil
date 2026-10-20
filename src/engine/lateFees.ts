@@ -7,6 +7,9 @@ export interface LateFeeCalculationResult {
   fixedLateFee: number;
   totalLateFee: number;
   isOverdue: boolean;
+  baseOverdueAmount: number;
+  dailyLateRate: number;
+  graceDaysLate: number;
 }
 
 /**
@@ -33,6 +36,9 @@ export function calculateLateFee(
       fixedLateFee: 0,
       totalLateFee: 0,
       isOverdue: false,
+      baseOverdueAmount: Math.max(0, overdueAmount),
+      dailyLateRate: dailyLateRate || 0,
+      graceDaysLate: graceDaysLate || 0,
     };
   }
 
@@ -53,6 +59,9 @@ export function calculateLateFee(
     fixedLateFee: appliedFixedFee,
     totalLateFee,
     isOverdue: true,
+    baseOverdueAmount: round(overdueAmount, 2),
+    dailyLateRate: dailyLateRate || 0,
+    graceDaysLate: graceDaysLate || 0,
   };
 }
 

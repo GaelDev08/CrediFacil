@@ -10,9 +10,10 @@ import {
 import { useCreditStore } from '../../store/useCreditStore';
 import { CurrencyDisplay } from '../common/CurrencyDisplay';
 import { round } from '../../engine/formulas';
+import { CURRENCY_CONFIGS } from '../../engine/currency';
 
 export const MetricsSummary: React.FC = () => {
-  const { summary, params } = useCreditStore();
+  const { summary, params, displayCurrency, setDisplayCurrency } = useCreditStore();
 
   const totalPrincipal = params.principal;
   const repaymentRatio =
@@ -25,8 +26,36 @@ export const MetricsSummary: React.FC = () => {
       ? Math.min(100, round((summary.totalPaid / summary.totalRepayment) * 100, 1))
       : 0;
 
+  const isDualCurrency = params.currency !== displayCurrency;
+
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Banner de Moneda Dual / Contravalor */}
+      {isDualCurrency && (
+        <div className="col-span-2 lg:col-span-4 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-md border border-blue-700/50">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-blue-500/20 rounded-xl text-blue-300 font-bold text-lg">
+              💱
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-blue-300">
+                Visualización Multimoneda Activa
+              </p>
+              <p className="text-sm text-slate-100 font-medium">
+                Crédito otorgado en <strong className="text-white">{params.currency}</strong> ({CURRENCY_CONFIGS[params.currency]?.name}) —
+                Visualizando cuotas y métricas en <strong className="text-emerald-300">{displayCurrency}</strong> al T.C. oficial.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setDisplayCurrency(params.currency)}
+            className="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-xs font-semibold text-white transition-all shadow-sm hover:scale-105"
+          >
+            Ver en Moneda Original ({params.currency})
+          </button>
+        </div>
+      )}
+
       {/* Total Repayment Card */}
       <div className="bg-gradient-to-br from-blue-900 to-indigo-900 rounded-2xl p-4 sm:p-5 text-white shadow-md shadow-blue-950/20 col-span-2 sm:col-span-1">
         <div className="flex items-center justify-between text-blue-200 mb-2">
@@ -58,7 +87,7 @@ export const MetricsSummary: React.FC = () => {
           </div>
         </div>
         <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-          <CurrencyDisplay amount={summary.totalInterest} />
+          <CurrencyDisplay amount={summary.totalInterest} showEquivalent />
         </div>
         <p className="mt-2 text-xs text-slate-500">
           Costo financiero puro del préstamo
@@ -76,7 +105,7 @@ export const MetricsSummary: React.FC = () => {
           </div>
         </div>
         <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-          <CurrencyDisplay amount={summary.initialInstallment} />
+          <CurrencyDisplay amount={summary.initialInstallment} showEquivalent />
         </div>
         <p className="mt-2 text-xs text-slate-500">
           {params.method === 'german'
@@ -116,8 +145,8 @@ export const MetricsSummary: React.FC = () => {
             <div>
               <p className="text-xs text-slate-400 font-medium">Progreso de Amortización</p>
               <p className="text-sm font-bold text-white">
-                Pagado: <CurrencyDisplay amount={summary.totalPaid} /> de{' '}
-                <CurrencyDisplay amount={summary.totalRepayment + summary.totalLateFees} />
+                Pagado: <CurrencyDisplay amount={summary.totalPaid} showEquivalent /> de{' '}
+                <CurrencyDisplay amount={summary.totalRepayment + summary.totalLateFees} showEquivalent />
               </p>
             </div>
           </div>

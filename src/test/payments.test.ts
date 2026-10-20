@@ -7,6 +7,7 @@ const testParams: LoanParams = {
   principal: 6000,
   currency: 'PEN',
   exchangeRate: 3.75,
+  bcvExchangeRate: 880.0,
   interestRate: 2.0,
   rateType: 'TEM',
   term: 6,
@@ -23,7 +24,7 @@ const testParams: LoanParams = {
 };
 
 describe('Payment Simulation Engine', () => {
-  it('converts currencies correctly', () => {
+  it('converts currencies correctly including USD, PEN, and VES (BCV)', () => {
     // 100 USD at 3.75 PEN/USD = 375 PEN
     const pen = convertPaymentCurrency(100, 'USD', 'PEN', 3.75);
     expect(pen).toBe(375);
@@ -31,6 +32,10 @@ describe('Payment Simulation Engine', () => {
     // 375 PEN to USD at 3.75 = 100 USD
     const usd = convertPaymentCurrency(375, 'PEN', 'USD', 3.75);
     expect(usd).toBe(100);
+
+    // 10 USD to VES at 880 = 8800 VES
+    const ves = convertPaymentCurrency(10, 'USD', 'VES', 3.75, 880);
+    expect(ves).toBe(8800);
   });
 
   it('simulates an on-time full payment of installment 1', () => {
@@ -43,6 +48,7 @@ describe('Payment Simulation Engine', () => {
       paymentDate: inst1.dueDate,
       amount: inst1.totalInstallment,
       paymentCurrency: 'PEN',
+      targetInstallmentNumber: 1,
     });
 
     expect(result.updatedSchedule[0].status).toBe('paid');
@@ -63,6 +69,7 @@ describe('Payment Simulation Engine', () => {
       paymentDate: inst1.dueDate,
       amount: 100,
       paymentCurrency: 'PEN',
+      targetInstallmentNumber: 1,
     });
 
     const updated1 = result.updatedSchedule[0];
@@ -84,6 +91,7 @@ describe('Payment Simulation Engine', () => {
       paymentDate: latePaymentDate,
       amount: inst1.totalInstallment,
       paymentCurrency: 'PEN',
+      targetInstallmentNumber: 1,
     });
 
     // Mora should have been paid first, leaving some principal remaining
@@ -103,9 +111,69 @@ describe('Payment Simulation Engine', () => {
       paymentDate: inst1.dueDate,
       amount: usdAmount,
       paymentCurrency: 'USD',
+      targetInstallmentNumber: 1,
     });
 
+    expect(result.paymentRecord.currency).toBe('USD');
     expect(result.paymentRecord.convertedAmount).toBeGreaterThanOrEqual(inst1.totalInstallment);
     expect(result.updatedSchedule[0].status).toBe('paid');
+  });
+
+  it('updates credit on balance when paying extra (pagar de mas con reduccion de cuota)', () => {
+    const ibParams: LoanParams = {
+      ...testParams,
+      method: 'interest_balance',
+    };
+    const schedule = generateAmortizationSchedule(ibParams);
+    const inst1 = schedule[0];
+
+    // Client pays installment 1 plus an extra 2000 PEN of principal prepayment
+    const extraPayment = inst1.totalInstallment + 2000;
+
+    const result = simulatePayment({
+      schedule,
+      loanParams: ibParams,
+      paymentDate: inst1.dueDate,
+      amount: extraPayment,
+      paymentCurrency: 'PEN',
+      targetInstallmentNumber: 1,
+      prepaymentStrategy: 'reduce_installment',
+    });
+
+    expect(result.updatedSchedule[0].status).toBe('paid');
+    expect(result.paymentRecord.allocation.extraPrepayment).toBe(2000);
+
+    // Remaining installments have recalculated interest based on the lower balance
+    const originalInst2Interest = schedule[1].interest;
+    const updatedInst2Interest = result.updatedSchedule[1].interest;
+    expect(updatedInst2Interest).toBeLessThan(originalInst2Interest);
+  });
+
+  it('updates credit on balance when paying extra with reduce_term strategy', () => {
+    const ibParams: LoanParams = {
+      ...testParams,
+      method: 'interest_balance',
+    };
+    const schedule = generateAmortizationSchedule(ibParams);
+    const inst1 = schedule[0];
+
+    // Client pays installment 1 plus enough to cancel the last installment
+    const extraPayment = inst1.totalInstallment + 1200;
+
+    const result = simulatePayment({
+      schedule,
+      loanParams: ibParams,
+      paymentDate: inst1.dueDate,
+      amount: extraPayment,
+      paymentCurrency: 'PEN',
+      targetInstallmentNumber: 1,
+      prepaymentStrategy: 'reduce_term',
+    });
+
+    // Last installment is cancelled/paid early
+    const lastInst = result.updatedSchedule[result.updatedSchedule.length - 1];
+    expect(lastInst.status).toBe('paid');
+    expect(lastInst.principal).toBe(0);
+    expect(lastInst.interest).toBe(0);
   });
 });

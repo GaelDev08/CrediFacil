@@ -14,13 +14,20 @@ import {
 } from '../engine/amortization';
 import { updateScheduleWithLateFees } from '../engine/lateFees';
 import { simulatePayment } from '../engine/payments';
+import { fetchBcvRate, FALLBACK_BCV_RATE } from '../services/bcvService';
+import {
+  fetchAllOfficialExchangeRates,
+  type ExchangeRatesSnapshot,
+} from '../services/exchangeRateService';
 
 const today = new Date().toISOString().split('T')[0];
 
 export const DEFAULT_LOAN_PARAMS: LoanParams = {
   principal: 10000,
   currency: 'PEN',
-  exchangeRate: 3.75,
+  exchangeRate: 3.75, // USD/PEN
+  bcvExchangeRate: FALLBACK_BCV_RATE, // USD/VES
+  bcvLastUpdated: today,
   interestRate: 24, // 24% TEA
   rateType: 'TEA',
   term: 12,
@@ -30,9 +37,13 @@ export const DEFAULT_LOAN_PARAMS: LoanParams = {
   graceType: 'none',
   disbursementDate: today,
   desgravamenRate: 0.05, // 0.05% monthly
-  adminFee: 5.0, // S/. 5.00 fixed
+  adminFee: 0, // 0 si no tiene comisiones
+  adminFeeType: 'fixed',
+  adminFeePercent: 0,
+  disbursementFeePercent: 0,
+  disbursementFeeAmount: 0,
   dailyLateRate: 0.1, // 0.1% daily mora
-  fixedLateFee: 15.0, // S/. 15 fixed collection fee
+  fixedLateFee: 15.0, // fixed collection fee
   graceDaysLate: 2, // 2 grace days
 };
 
@@ -45,6 +56,29 @@ export interface Preset {
 }
 
 export const LOAN_PRESETS: Preset[] = [
+  {
+    id: 'interes-saldo-venezuela',
+    name: 'Crédito Interés sobre Saldo (VES)',
+    description: 'En Bolívares con tasa oficial BCV. Recalcula cuotas e intereses al amortizar de más.',
+    icon: 'Sparkles',
+    params: {
+      principal: 25000,
+      currency: 'VES',
+      term: 12,
+      frequency: 'monthly',
+      interestRate: 28,
+      rateType: 'TEA',
+      method: 'interest_balance',
+      gracePeriods: 0,
+      graceType: 'none',
+      disbursementFeePercent: 1.5,
+      adminFeeType: 'percentage',
+      adminFeePercent: 0.5,
+      dailyLateRate: 0.15,
+      fixedLateFee: 50,
+      graceDaysLate: 2,
+    },
+  },
   {
     id: 'micro-capital',
     name: 'Microcrédito Capital de Trabajo',
@@ -61,6 +95,8 @@ export const LOAN_PRESETS: Preset[] = [
       gracePeriods: 0,
       graceType: 'none',
       adminFee: 3,
+      adminFeeType: 'fixed',
+      disbursementFeePercent: 0,
       desgravamenRate: 0.05,
     },
   },
@@ -80,6 +116,8 @@ export const LOAN_PRESETS: Preset[] = [
       gracePeriods: 0,
       graceType: 'none',
       adminFee: 10,
+      adminFeeType: 'fixed',
+      disbursementFeePercent: 1.0,
       desgravamenRate: 0.04,
     },
   },
@@ -99,6 +137,7 @@ export const LOAN_PRESETS: Preset[] = [
       gracePeriods: 3,
       graceType: 'partial',
       adminFee: 5,
+      adminFeeType: 'fixed',
       desgravamenRate: 0.05,
     },
   },
@@ -119,6 +158,7 @@ export const LOAN_PRESETS: Preset[] = [
       gracePeriods: 0,
       graceType: 'none',
       adminFee: 2,
+      adminFeeType: 'fixed',
       desgravamenRate: 0.03,
     },
   },
@@ -138,6 +178,7 @@ export const LOAN_PRESETS: Preset[] = [
       gracePeriods: 0,
       graceType: 'none',
       adminFee: 0,
+      adminFeeType: 'fixed',
       desgravamenRate: 0,
     },
   },
@@ -153,15 +194,25 @@ interface CreditState {
   displayCurrency: Currency;
   isAdvancedOpen: boolean;
   activeTab: 'table' | 'charts' | 'compare' | 'payments';
+  isTableExpanded: boolean;
+  bcvRate: number;
+  bcvLastUpdated: string;
+  isBcvLoading: boolean;
+  ratesSnapshot?: ExchangeRatesSnapshot;
 
   // Actions
   setLoanParam: <K extends keyof LoanParams>(key: K, value: LoanParams[K]) => void;
   setMultipleParams: (partial: Partial<LoanParams>) => void;
   setExchangeRate: (rate: number) => void;
+  setBcvRate: (rate: number) => void;
+  fetchBcvRateAction: () => Promise<void>;
+  fetchAllRatesAction: () => Promise<void>;
   setDisplayCurrency: (currency: Currency) => void;
   setEvaluationDate: (date: string) => void;
   setIsAdvancedOpen: (open: boolean) => void;
   setActiveTab: (tab: 'table' | 'charts' | 'compare' | 'payments') => void;
+  toggleTableExpanded: () => void;
+  setIsTableExpanded: (expanded: boolean) => void;
   applyPayment: (paymentData: {
     amount: number;
     paymentDate: string;
@@ -179,7 +230,7 @@ function computeState(
   evaluationDate: string,
   existingPayments: PaymentSimulation[] = []
 ) {
-  let baseSchedule = generateAmortizationSchedule(params);
+  const baseSchedule = generateAmortizationSchedule(params);
 
   // If there are existing payments, replay them
   let currentSchedule = baseSchedule;
@@ -226,23 +277,31 @@ export const useCreditStore = create<CreditState>((set, get) => {
     displayCurrency: 'PEN',
     isAdvancedOpen: false,
     activeTab: 'table',
+    isTableExpanded: true,
+    bcvRate: FALLBACK_BCV_RATE,
+    bcvLastUpdated: today,
+    isBcvLoading: false,
 
     setLoanParam: (key, value) => {
-      const { params, evaluationDate, payments } = get();
+      const { params, evaluationDate, payments, displayCurrency } = get();
       const updatedParams = { ...params, [key]: value };
+      const nextDisplayCurrency = key === 'currency' ? (value as Currency) : displayCurrency;
       const computed = computeState(updatedParams, evaluationDate, payments);
       set({
         params: updatedParams,
+        displayCurrency: nextDisplayCurrency,
         ...computed,
       });
     },
 
     setMultipleParams: (partial) => {
-      const { params, evaluationDate, payments } = get();
+      const { params, evaluationDate, payments, displayCurrency } = get();
       const updatedParams = { ...params, ...partial };
+      const nextDisplayCurrency = partial.currency ? partial.currency : displayCurrency;
       const computed = computeState(updatedParams, evaluationDate, payments);
       set({
         params: updatedParams,
+        displayCurrency: nextDisplayCurrency,
         ...computed,
       });
     },
@@ -256,6 +315,68 @@ export const useCreditStore = create<CreditState>((set, get) => {
         params: updatedParams,
         ...computed,
       });
+    },
+
+    setBcvRate: (rate) => {
+      const safeRate = Math.max(0.01, rate);
+      const { params, evaluationDate, payments } = get();
+      const updatedParams = { ...params, bcvExchangeRate: safeRate };
+      const computed = computeState(updatedParams, evaluationDate, payments);
+      set({
+        bcvRate: safeRate,
+        params: updatedParams,
+        ...computed,
+      });
+    },
+
+    fetchBcvRateAction: async () => {
+      set({ isBcvLoading: true });
+      try {
+        const res = await fetchBcvRate();
+        const { params, evaluationDate, payments } = get();
+        const updatedParams = {
+          ...params,
+          bcvExchangeRate: res.rate,
+          bcvLastUpdated: res.date,
+        };
+        const computed = computeState(updatedParams, evaluationDate, payments);
+        set({
+          bcvRate: res.rate,
+          bcvLastUpdated: res.date,
+          isBcvLoading: false,
+          params: updatedParams,
+          ...computed,
+        });
+      } catch (err) {
+        console.error('Error al actualizar tasa BCV:', err);
+        set({ isBcvLoading: false });
+      }
+    },
+
+    fetchAllRatesAction: async () => {
+      set({ isBcvLoading: true });
+      try {
+        const snap = await fetchAllOfficialExchangeRates();
+        const { params, evaluationDate, payments } = get();
+        const updatedParams = {
+          ...params,
+          exchangeRate: snap.ratesToUSD.PEN || params.exchangeRate,
+          bcvExchangeRate: snap.ratesToUSD.VES || params.bcvExchangeRate,
+          bcvLastUpdated: snap.lastUpdated,
+        };
+        const computed = computeState(updatedParams, evaluationDate, payments);
+        set({
+          bcvRate: updatedParams.bcvExchangeRate || FALLBACK_BCV_RATE,
+          bcvLastUpdated: snap.lastUpdated,
+          ratesSnapshot: snap,
+          isBcvLoading: false,
+          params: updatedParams,
+          ...computed,
+        });
+      } catch (err) {
+        console.error('Error al sincronizar tasas oficiales:', err);
+        set({ isBcvLoading: false });
+      }
     },
 
     setDisplayCurrency: (currency) => {
@@ -277,6 +398,14 @@ export const useCreditStore = create<CreditState>((set, get) => {
 
     setActiveTab: (tab) => {
       set({ activeTab: tab });
+    },
+
+    toggleTableExpanded: () => {
+      set((state) => ({ isTableExpanded: !state.isTableExpanded }));
+    },
+
+    setIsTableExpanded: (expanded) => {
+      set({ isTableExpanded: expanded });
     },
 
     applyPayment: (paymentData) => {

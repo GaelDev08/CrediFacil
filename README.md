@@ -1,130 +1,146 @@
-# Simulador de Créditos – Motor Avanzado de Préstamos (CrediFacil)
+# 💰 CrediFacil – Motor Avanzado de Simulación y Amortización Financiera
 
-> Simulador realista de créditos basado en métodos de cálculo usados en fintechs de microfinanzas de Latinoamérica (amortización francesa y alemana, mora, multi-moneda, simulación de pagos y tipo de cambio).
+> **Simulador financiero de grado bancario y fintech para Latinoamérica**. Diseñado con una arquitectura desacoplada y modular para modelar créditos comerciales, de consumo y microfinanzas con soporte multimoneda, sincronización oficial con Bancos Centrales, amortización francesa, alemana, tasa plana e interés sobre saldo deudor, prelación bancaria de pagos, liquidación de mora y reportes ejecutivos.
 
-Construido para demostrar conocimiento profundo de dominio técnico y matemático en sistemas de crédito bancarios y microfinancieros.
-
-[![Vitest Unit Tests](https://img.shields.io/badge/tests-27%20passed-emerald)](https://vitest.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-19-61dafb)](https://react.dev)
-[![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-v4-38bdf8)](https://tailwindcss.com)
-
----
-
-## 🚀 Features / Características
-
-### 1. Core Credit Operations / Operaciones Principales
-- **Creación de crédito**: Configuración de capital, tasa de interés (TEA, TEM, TNA), plazo (semanal, quincenal, mensual), fecha de desembolso y primer vencimiento.
-- **Tabla de amortización completa**: Desglose período a período de saldo inicial, amortización de capital, interés compensatorio, seguro de desgravamen, comisiones administrativas, cuota total exigible y saldo deudor remanente.
-- **Períodos de Gracia**:
-  - **Sin gracia**: Amortización continua desde la cuota 1.
-  - **Gracia Parcial**: Pago exclusivo de intereses y comisiones durante los períodos de gracia, preservando el saldo capital intacto.
-  - **Gracia Total**: Suspensión temporal de pagos donde los intereses devengados se capitalizan al saldo deudor, recalculando el cronograma posterior.
-- **Simulador de Pagos en Tiempo Real**: Simula abonos a tiempo, pagos parciales, pagos vencidos y amortizaciones extraordinarias anticipadas.
-- **Prelación Bancaria de Pagos (Payment Waterfall)**:
-  1. `Mora y penalidades por cobranza`
-  2. `Seguros y comisiones fijas`
-  3. `Intereses compensatorios vencidos/corrientes`
-  4. `Capital corriente exigible`
-  5. `Excedente / Amortización anticipada` (opción de **Reducción de Plazo** o **Reducción de Cuota**).
-- **Cálculo Avanzado de Mora (Late Fees)**:
-  - Días de atraso (*Days Past Due / DPD*).
-  - Tasa moratoria diaria sobre capital/cuota vencida.
-  - Comisión fija de cobranza tras superar los días de tolerancia (*grace days*).
-- **Multi-Moneda & Tipo de Cambio Dinámico**:
-  - Soporte de moneda nacional (**PEN, MXN, COP**) y divisas internacionales (**USD**).
-  - Ticker de Tipo de Cambio en vivo y selector de divisa de visualización con conversión instantánea.
-  - Capacidad de simular pagos en moneda extranjera para un crédito en moneda local (o viceversa) aplicando el tipo de cambio oficial.
-- **Métricas Regulatorias**:
-  - Cálculo de **TCEA** (*Tasa de Costo Efectivo Anual*) basado en **TIR** (*Tasa Interna de Retorno / IRR*) de los flujos netos de caja según normativa SBS / Condusef.
-- **Exportación**:
-  - Exportación del cronograma a **CSV** compatible con Microsoft Excel.
-  - Formato de impresión limpio para reporte en **PDF**.
+[![Vitest Unit Tests](https://img.shields.io/badge/Vitest-36%20tests%20passing-emerald?style=flat-square&logo=vitest)](https://vitest.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Strict%20Mode-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react)](https://react.dev)
+[![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-v4-38bdf8?style=flat-square&logo=tailwindcss)](https://tailwindcss.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-amber?style=flat-square)](LICENSE)
 
 ---
 
-### 2. Métodos de Amortización
+## 🌟 ¿Por qué este simulador demuestra experiencia de un Dev Senior & Fintech Architect?
 
-| Método | Dinámica de Cuota | Dinámica de Capital | Intereses Totales | Caso Típico de Uso |
-|---|---|---|---|---|
-| **Francés** | **Cuota Fija** | Creciente período a período | Medio | Créditos de consumo, personales y vehiculares |
-| **Alemán** | **Cuota Decreciente** | **Capital Fijo / Constante** | **Menor costo total** | Préstamos PYME y comerciales |
-| **Tasa Plana (Flat)** | **Cuota Fija** | Capital Fijo | Mayor costo relativo | Microcréditos rápidos, comercio informal y mercados |
+A diferencia de simuladores básicos que se limitan a dividir el capital entre el número de meses, **CrediFacil** fue diseñado desde cero implementando la **lógica real de una entidad financiera o core bancario moderno**:
+
+### 1. Dominio de Negocio Financiero Real (Fintech & Microfinanzas)
+- **Prelación Bancaria de Pagos (Payment Waterfall)**: Cuando un cliente abona dinero, el sistema aplica la prelación regulatoria estricta:
+  1. *Gastos de cobranza e interés moratorio devengado*.
+  2. *Seguros (desgravamen) y comisiones administrativas*.
+  3. *Interés compensatorio vencido y del período*.
+  4. *Capital corriente exigible*.
+  5. *Excedente aplicado a amortización extraordinaria anticipada* (recalculando el cronograma por **Reducción de Plazo** o **Reducción de Cuota**).
+- **Gestión de Entornos Multidivisa y Volatilidad Cambiaria**:
+  - En mercados latinoamericanos con regímenes cambiarios dinámicos (Perú con el BCRP, México con Banxico, Colombia con BanRep y Venezuela con el **Banco Central de Venezuela - BCV**), el sistema permite otorgar créditos pactados en moneda dura (**USD**) y visualizarlos/liquidarlos en moneda local (**VES, PEN, MXN, COP**) o viceversa con su contravalor exacto en tiempo real.
+- **Rigor Matemático y Precisión Financiera**:
+  - Mitigación de errores de redondeo de coma flotante IEEE 754 mediante compensación con `Number.EPSILON` y ajuste de cierre en la última cuota para garantizar un **saldo deudor remanente exactamente en `0.00`**.
+  - Cálculo de la **TCEA (Tasa de Costo Efectivo Anual)** mediante el algoritmo numérico de **Newton-Raphson** calculando la **TIR** de los flujos de caja netos del crédito.
+
+### 2. Arquitectura Limpia y Desacoplamiento (Clean Architecture)
+- **Motor Financiero Aislado (`src/engine/`)**: Libre de dependencias externas o librerías de UI. Son funciones de TypeScript 100% puras, inmutables y fácilmente migrables a un backend en Go, Node.js, Python o microservicios.
+- **Gestión de Estado Reactiva (`src/store/useCreditStore.ts`)**: Basada en Zustand con re-cálculo reactivo determinista: permite simular múltiples pagos sucesivos reejecutando el pipeline cronológico con total fidelidad.
+- **Cero Sorpresas en Exportación**:
+  - Resuelve el error clásico de Microsoft Excel en Windows con codificación UTF-8 inyectando un **BOM binario estricto** (`0xEF, 0xBB, 0xBF`) y eliminando directivas conflictivas.
+  - Generador nativo de hojas de cálculo **Microsoft Excel (`.xls`)** con marcado XML Spreadsheet 2003, cabecera corporativa y formato de moneda automático sin dependencias pesadas.
 
 ---
 
-## 🛠️ Tech Stack
+## 🚀 Funcionalidades Principales
 
-| Capa / Layer | Tecnología |
-|---|---|
-| **Frontend** | React 19 + TypeScript + Vite + Tailwind CSS v4 |
-| **Estado Global** | Zustand (reactivo, desacoplado y con persistencia de cálculos) |
-| **Gráficos** | Recharts (Evolución de Saldo Deudor y Composición de Cuota) |
-| **Motor de Cálculo** | Pure TypeScript Functions (100% libre de efectos secundarios) |
-| **Testing** | Vitest + React Testing Library (27 pruebas unitarias) |
-| **Iconografía** | Lucide React |
+### 1. Métodos de Amortización Integrados
+1. **Sistema Francés (Cuota Fija)**: El estándar en créditos de consumo y personales.
+2. **Sistema Alemán (Amortización Constante de Capital)**: Cuotas decrecientes con menor costo financiero total.
+3. **Interés sobre Saldo Deudor**: Interés calculado sobre el capital vivo insoluto; ante abonos de más, el crédito se recalcula en tiempo real ajustando las cuotas restantes.
+4. **Tasa Plana (Flat Rate)**: Interés simple fijo por período, muy utilizado en microcréditos de comercio ágil.
+
+### 2. Frecuencias de Pago (5 Frecuencias Bancarias)
+- **Anual**: 360 días (1 período/año).
+- **Mensual**: 30 días (12 períodos/año).
+- **Quincenal**: 15 días (24 períodos/año).
+- **Semanal**: 7 días (52 períodos/año).
+- **Diario**: 1 día (360 períodos/año en convención bancaria LATAM).
+
+### 3. Conexión Oficial con Bancos Centrales
+El simulador incorpora un servicio de consulta en vivo y de contingencia para las tasas de cambio de los principales bancos centrales:
+- 🇻🇪 **Banco Central de Venezuela (BCV)**: Tasa oficial para Bolívares (`VES`).
+- 🇵🇪 **Banco Central de Reserva del Perú (BCRP / SBS)**: Tasa interbancaria oficial para Soles (`PEN`).
+- 🇲🇽 **Banco de México (Banxico)**: Tipo de cambio FIX para Pesos Mexicanos (`MXN`).
+- 🇨🇴 **Banco de la República de Colombia (BanRep / TRM)**: TRM oficial para Pesos Colombianos (`COP`).
+- 🇺🇸 **Sistema de la Reserva Federal (Fed)**: Dólar estadounidense como moneda base.
+
+### 4. Períodos de Gracia
+- **Sin Gracia**: Inicio de amortización inmediato en la cuota 1.
+- **Gracia Parcial**: Pago exclusivo de intereses compensatorios y comisiones; el saldo de capital permanece intacto.
+- **Gracia Total**: Suspensión temporal de pagos con capitalización de intereses al saldo insoluto (*anatocismo legal*).
+
+### 5. Control de Mora, Cobranza y Fechas de Corte
+- Tasa moratoria diaria porcentual configurable.
+- Comisión fija de cobranza administrativa.
+- Días de tolerancia (*grace days*) antes del devengo de penalidades.
+- Selector dinámico de **Fecha de Corte** para auditar morosidad proyectada cuota por cuota.
+
+### 6. Comisiones y Gastos Administrativos
+- **Comisión de Desembolso**: Definida en porcentaje, calculando tanto el capital adeudado como el monto neto líquido entregado al cliente.
+- **Gastos Administrativos**: Fijos por cuota o porcentuales sobre saldo deudor insoluto.
+- **Seguro de Desgravamen**: Cobertura porcentual sobre el saldo deudor remanente.
+
+### 7. Reportes y Exportación Profesional
+- **Reporte Oficial Excel (`.xls`)**: Formato ejecutivo con colores institucionales, datos de la operación, celdas de moneda y totales destacados.
+- **Reporte CSV Estructurado (`.csv`)**: Delimitado por punto y coma (`;`), con BOM UTF-8 estricto para abrir directamente en Excel en español sin problemas de acentos (`ó`, `é`, `í`, `ñ`, `°`).
+- **Impresión Limpia (`window.print`)**: Vista estilizada que oculta la barra de navegación y formularios, imprimiendo únicamente la ficha ejecutiva y el cronograma limpio.
 
 ---
 
-## 📁 Project Structure / Estructura del Proyecto
+## 🛠️ Stack Tecnológico
+
+| Componente | Tecnología | Propósito |
+| :--- | :--- | :--- |
+| **Frontend Framework** | **React 19** | Renderizado concurrente y UI declarativa de alto rendimiento. |
+| **Lenguaje** | **TypeScript 5.8 (Strict)** | Tipado estricto en todas las estructuras de dominio financiero. |
+| **Build Tool** | **Vite 8** | HMR instantáneo y empaquetado optimizado para producción. |
+| **Estilos** | **Tailwind CSS v4** | Diseño responsivo moderno, paleta financiera y modo de impresión `@media print`. |
+| **Estado Global** | **Zustand** | Store ligero, desacoplado y sin boilerplate para cálculos reactivos. |
+| **Pruebas Unitarias** | **Vitest** | 36 tests unitarios verificando fórmulas financieras, mora, pagos y tipos de cambio. |
+| **Linter** | **Oxlint** | Análisis estático ultrarrápido con 0 errores y 0 advertencias. |
+| **Iconos** | **Lucide React** | Iconografía limpia y accesible. |
+
+---
+
+## 📁 Estructura del Código
 
 ```text
 CrediFacil/
-├── public/                     # Activos estáticos
 ├── src/
-│   ├── types/                  # Definiciones de tipos de dominio (LoanParams, Installment, etc.)
+│   ├── types/                  # Modelos de dominio financiero (LoanParams, Installment, etc.)
 │   │   ├── credit.ts
 │   │   └── index.ts
-│   ├── engine/                 # Motor financiero modular en TypeScript puro
-│   │   ├── formulas.ts         # Fórmulas base (TEA, TEM, PMT Francés, TIR/TCEA, redondeo)
-│   │   ├── amortization.ts     # Generador de tablas (Francés, Alemán, Flat, Gracia)
-│   │   ├── lateFees.ts         # Cálculo de DPD, interés moratorio diario y comisiones
+│   ├── engine/                 # Motor financiero modular (TypeScript Puro, 0 dependencias UI)
+│   │   ├── formulas.ts         # Fórmulas de tasas (TEA/TEM/TNA), PMT, Newton-Raphson TCEA, días
+│   │   ├── amortization.ts     # Algoritmos Francés, Alemán, Tasa Plana e Interés sobre Saldo
+│   │   ├── lateFees.ts         # Cálculo de días de atraso (DPD), mora diaria y cobranza
 │   │   ├── payments.ts         # Prelación de pagos (waterfall), abonos parciales y prepagos
-│   │   ├── currency.ts         # Monedas, formateo monetario y conversiones de tipo de cambio
+│   │   ├── currency.ts         # Monedas soportadas, formato financiero y conversión cruzada
 │   │   └── index.ts
-│   ├── store/
-│   │   └── useCreditStore.ts   # Store de Zustand con gestión reactiva y plantillas (presets)
-│   ├── components/
-│   │   ├── header/
-│   │   │   ├── Navbar.tsx           # Barra superior con marca, plantillas y enlace GitHub
-│   │   │   └── ExchangeRateBar.tsx  # Ticker de tipo de cambio y fecha de corte
-│   │   ├── form/
-│   │   │   └── LoanForm.tsx         # Formulario de parámetros y configuración avanzada
-│   │   ├── dashboard/
-│   │   │   ├── MetricsSummary.tsx   # Tarjetas ejecutivas (Capital, Intereses, Cuota, TCEA)
-│   │   │   └── ComparisonCard.tsx   # Comparativa en tiempo real Francés vs Alemán vs Flat
-│   │   ├── charts/
-│   │   │   └── AmortizationCharts.tsx # Visualizaciones con Recharts
-│   │   ├── table/
-│   │   │   └── AmortizationTable.tsx  # Tabla con estados, exportación CSV e impresión
-│   │   ├── payment/
-│   │   │   ├── PaymentSimulatorModal.tsx # Modal interactivo de abonos
-│   │   │   └── PaymentHistoryList.tsx    # Registro de transacciones simuladas
-│   │   └── common/
-│   │       ├── Badge.tsx            # Insignias de estado (Pendiente, Pagado, Vencido, Gracia)
-│   │       └── CurrencyDisplay.tsx  # Componente multi-divisa reactivo
-│   ├── test/                   # Suite de pruebas unitarias
-│   │   ├── amortization.test.ts
-│   │   ├── formulas.test.ts
-│   │   ├── payments.test.ts
-│   │   ├── lateFees.test.ts
-│   │   ├── currency.test.ts
-│   │   └── setup.ts
-│   ├── App.tsx                 # Contenedor principal de la aplicación
-│   ├── main.tsx                # Punto de entrada de React
-│   └── index.css               # Estilos globales y Tailwind CSS
-├── package.json
-├── tsconfig.json
-├── vite.config.ts
-└── README.md
+│   ├── services/               # Conexión con APIs y Bancos Centrales
+│   │   ├── bcvService.ts       # Consulta oficial Banco Central de Venezuela
+│   │   └── exchangeRateService.ts # Snapshot global de divisas (BCV, BCRP, Banxico, BanRep, Fed)
+│   ├── utils/                  # Generación y exportación de reportes
+│   │   └── reportExporter.ts   # Generador nativo Excel (.xls) y CSV UTF-8 estructurado
+│   ├── store/                  # Estado reactivo global
+│   │   └── useCreditStore.ts   # Store Zustand con re-cálculo automático y presets
+│   ├── components/             # Componentes modulares de interfaz
+│   │   ├── header/             # Barra de tipo de cambio, fecha de corte y navegación
+│   │   ├── form/               # Formulario de configuración de crédito y frecuencias
+│   │   ├── dashboard/          # Tarjetas de resumen ejecutivo y comparativas
+│   │   ├── table/              # Tabla de amortización con filtros, sticky actions e impresión
+│   │   ├── payment/            # Modal de simulación de pagos y amortización extraordinaria
+│   │   ├── charts/             # Gráficos de saldo deudor y composición de cuotas
+│   │   └── common/             # Visualizador de monedas equivalentes (CurrencyDisplay)
+│   └── test/                   # Suite de 36 pruebas unitarias con Vitest
+│       ├── amortization.test.ts
+│       ├── currency.test.ts
+│       ├── formulas.test.ts
+│       ├── lateFees.test.ts
+│       └── payments.test.ts
 ```
 
 ---
 
-## ⚡ Instalación y Ejecución
+## ⚡ Instalación y Ejecución Local
 
-### Requisitos previos
-- **Node.js** v18+ (recomendado Node 20 o superior)
+### Prerrequisitos
+- **Node.js** v18 o superior (recomendado v20+)
 - **npm** o **pnpm**
 
 ### 1. Clonar el repositorio
@@ -138,47 +154,45 @@ cd CrediFacil
 npm install
 ```
 
-### 3. Iniciar entorno de desarrollo
+### 3. Iniciar el servidor de desarrollo
 ```bash
 npm run dev
 ```
-Abre en tu navegador: `http://localhost:5173`
+Abra en su navegador: `http://localhost:5173`
 
-### 4. Ejecutar Pruebas Unitarias
+### 4. Ejecutar la suite de pruebas unitarias
 ```bash
 npm test
 ```
-Para ejecutar en modo interactivo:
-```bash
-npm run test:watch
-```
+*Se ejecutarán los 36 tests con verificación matemática de amortización, mora y conversiones.*
 
 ### 5. Compilar para producción
 ```bash
 npm run build
 ```
+Genera la compilación optimizada en la carpeta `dist/`.
 
 ---
 
 ## 📐 Fundamentos Matemáticos
 
-### 1. Conversión de Tasa Efectiva Anual (TEA) a Periódica ($i$)
-Convención bancaria de 360 días anuales:
-$$i = (1 + TEA)^{\frac{días\_período}{360}} - 1$$
+### 1. Tasa Periódica ($i$) desde Tasa Efectiva Anual (TEA)
+Bajo convención de 360 días bancarios:
+$$i = (1 + \text{TEA})^{\frac{\text{días\_período}}{360}} - 1$$
 
-### 2. Fórmula de Cuota Fija (Sistema Francés)
-$$R = Saldo \times \left[ \frac{i \times (1 + i)^n}{(1 + i)^n - 1} \right]$$
+### 2. Cuota Fija del Sistema Francés (PMT)
+$$R = \text{Saldo} \times \left[ \frac{i \times (1 + i)^n}{(1 + i)^n - 1} \right]$$
 
 ### 3. Tasa de Costo Efectivo Anual (TCEA)
-Calculada mediante el método numérico de Newton-Raphson resolviendo el Valor Actual Neto igual a cero sobre los flujos de caja del crédito:
-$$0 = -Desembolso + \sum_{k=1}^n \frac{Cuota\_Total_k}{(1 + TIR)^k}$$
-$$TCEA = (1 + TIR)^{períodos\_por\_año} - 1$$
+Calculada numéricamente igualando el Valor Actual Neto (VAN) a cero mediante iteración de Newton-Raphson:
+$$0 = -\text{DesembolsoNeto} + \sum_{k=1}^n \frac{\text{CuotaTotal}_k}{(1 + \text{TIR})^k}$$
+$$\text{TCEA} = (1 + \text{TIR})^{\text{períodos\_por\_año}} - 1$$
 
-### 4. Interés Moratorio (Mora)
-$$Mora = Capital\_Vencido \times \left(\frac{Tasa\_Diaria}{100}\right) \times Días\_Atraso + Comisión\_Fija$$
+### 4. Interés Moratorio Diario
+$$\text{Mora} = \text{CapitalVencido} \times \left( \frac{\text{TasaMoratoriaDiaria}}{100} \right) \times (\text{DíasAtraso} - \text{DíasTolerancia}) + \text{ComisiónFija}$$
 
 ---
 
 ## 📄 Licencia
 
-Este proyecto está disponible bajo la licencia **MIT**. Desarrollado con dedicación para ilustrar las mejores prácticas de arquitectura financiera fintech en frontend y TypeScript.
+Este proyecto está bajo la licencia **MIT**. Desarrollado con dedicación para reflejar las mejores prácticas de ingeniería de software, arquitectura limpia y tecnología financiera (Fintech).

@@ -13,11 +13,16 @@ export function round(value: number, decimals: number = 2): number {
  */
 export function getPeriodDays(frequency: PaymentFrequency): number {
   switch (frequency) {
-    case 'weekly':
-      return 7;
+    case 'annual':
+      return 360;
+    case 'monthly':
+      return 30;
     case 'biweekly':
       return 15;
-    case 'monthly':
+    case 'weekly':
+      return 7;
+    case 'daily':
+      return 1;
     default:
       return 30;
   }
@@ -28,11 +33,16 @@ export function getPeriodDays(frequency: PaymentFrequency): number {
  */
 export function getPeriodsPerYear(frequency: PaymentFrequency): number {
   switch (frequency) {
-    case 'weekly':
-      return 52;
+    case 'annual':
+      return 1;
+    case 'monthly':
+      return 12;
     case 'biweekly':
       return 24;
-    case 'monthly':
+    case 'weekly':
+      return 52;
+    case 'daily':
+      return 360;
     default:
       return 12;
   }
@@ -105,7 +115,9 @@ export function addPeriodsToDate(
   const [year, month, day] = baseDateStr.split('-').map(Number);
   const date = new Date(year, month - 1, day);
 
-  if (frequency === 'monthly') {
+  if (frequency === 'annual') {
+    date.setFullYear(date.getFullYear() + periodNumber);
+  } else if (frequency === 'monthly') {
     // Keep day of month consistent, adjusting for shorter months
     const targetMonth = month - 1 + periodNumber;
     date.setMonth(targetMonth);
@@ -113,6 +125,8 @@ export function addPeriodsToDate(
     date.setDate(date.getDate() + periodNumber * 14); // 2 weeks
   } else if (frequency === 'weekly') {
     date.setDate(date.getDate() + periodNumber * 7); // 1 week
+  } else if (frequency === 'daily') {
+    date.setDate(date.getDate() + periodNumber); // 1 day
   }
 
   const y = date.getFullYear();

@@ -16,13 +16,17 @@ describe('Financial Formulas Engine', () => {
   });
 
   it('provides standard periods per year and days', () => {
+    expect(getPeriodDays('annual')).toBe(360);
     expect(getPeriodDays('monthly')).toBe(30);
     expect(getPeriodDays('biweekly')).toBe(15);
     expect(getPeriodDays('weekly')).toBe(7);
+    expect(getPeriodDays('daily')).toBe(1);
 
+    expect(getPeriodsPerYear('annual')).toBe(1);
     expect(getPeriodsPerYear('monthly')).toBe(12);
     expect(getPeriodsPerYear('biweekly')).toBe(24);
     expect(getPeriodsPerYear('weekly')).toBe(52);
+    expect(getPeriodsPerYear('daily')).toBe(360);
   });
 
   it('converts TEA (Annual Effective Rate) to monthly periodic rate', () => {

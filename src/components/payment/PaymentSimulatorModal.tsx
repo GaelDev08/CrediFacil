@@ -5,11 +5,13 @@ import {
   ArrowRight,
   Sparkles,
   Coins,
+  AlertCircle,
 } from 'lucide-react';
 import { useCreditStore } from '../../store/useCreditStore';
-import { CURRENCY_CONFIGS } from '../../engine/currency';
+import { CURRENCY_CONFIGS, formatCurrency } from '../../engine/currency';
 import { convertPaymentCurrency } from '../../engine/payments';
 import { round } from '../../engine/formulas';
+import { calculateLateFee } from '../../engine/lateFees';
 import type { Currency, Installment } from '../../types';
 
 interface PaymentSimulatorModalProps {
@@ -29,7 +31,7 @@ const PaymentSimulatorForm: React.FC<FormInnerProps> = ({
   targetInstallmentNumber,
   onClose,
 }) => {
-  const { params, applyPayment, evaluationDate } = useCreditStore();
+  const { params, applyPayment, evaluationDate, bcvRate } = useCreditStore();
 
   const [paymentCurrency, setPaymentCurrency] = useState<Currency>(params.currency);
   const [amount, setAmount] = useState<number>(() =>
@@ -42,15 +44,27 @@ const PaymentSimulatorForm: React.FC<FormInnerProps> = ({
     'reduce_term' | 'reduce_installment'
   >('reduce_installment');
 
-  const currentLoanCurrencyConfig = CURRENCY_CONFIGS[params.currency];
   const currentPayCurrencyConfig = CURRENCY_CONFIGS[paymentCurrency];
 
   const convertedAmount = convertPaymentCurrency(
     amount,
     paymentCurrency,
     params.currency,
-    params.exchangeRate
+    params.exchangeRate,
+    bcvRate
   );
+
+  // Validación de mora proyectada a la fecha de pago elegida
+  const projectedLateFee = targetInstallment
+    ? calculateLateFee(
+        targetInstallment.dueDate,
+        paymentDate,
+        targetInstallment.principal + targetInstallment.interest,
+        params.dailyLateRate,
+        params.fixedLateFee,
+        params.graceDaysLate
+      )
+    : null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,37 +81,56 @@ const PaymentSimulatorForm: React.FC<FormInnerProps> = ({
     onClose();
   };
 
+  const currencies: Currency[] = ['PEN', 'USD', 'MXN', 'COP', 'VES'];
+
   return (
     <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto custom-scrollbar">
       {/* Target Installment Info Badge */}
       {targetInstallment && (
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between">
-          <div>
-            <span className="text-xs font-semibold text-slate-500 uppercase">
-              Cuota Seleccionada #{targetInstallment.number}
-            </span>
-            <div className="text-sm font-bold text-slate-900">
-              Vencimiento: {targetInstallment.dueDate}
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-semibold text-slate-500 uppercase">
+                Cuota Seleccionada #{targetInstallment.number}
+              </span>
+              <div className="text-sm font-bold text-slate-900">
+                Vencimiento: {targetInstallment.dueDate}
+              </div>
+              <div className="text-xs text-slate-500">
+                Capital: {formatCurrency(targetInstallment.principal, params.currency)} | Interés:{' '}
+                {formatCurrency(targetInstallment.interest, params.currency)}
+              </div>
             </div>
-            <div className="text-xs text-slate-500">
-              Capital: {currentLoanCurrencyConfig.symbol}{' '}
-              {targetInstallment.principal.toFixed(2)} | Interés:{' '}
-              {currentLoanCurrencyConfig.symbol} {targetInstallment.interest.toFixed(2)}
+
+            <div className="text-right">
+              <span className="text-xs text-slate-500 font-semibold">Exigible</span>
+              <div className="text-base font-black text-blue-700">
+                {formatCurrency(targetInstallment.remainingDue, params.currency)}
+              </div>
+              {targetInstallment.lateFee > 0 && (
+                <span className="text-[11px] font-bold text-rose-600 block">
+                  (Mora actual: +{formatCurrency(targetInstallment.lateFee, params.currency)})
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="text-right">
-            <span className="text-xs text-slate-500 font-semibold">Exigible</span>
-            <div className="text-base font-black text-blue-700">
-              {currentLoanCurrencyConfig.symbol}{' '}
-              {targetInstallment.remainingDue.toFixed(2)}
+          {/* Validación de Mora a la fecha elegida */}
+          {projectedLateFee && projectedLateFee.isOverdue && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-900 rounded-xl p-2.5 text-xs space-y-1">
+              <div className="font-bold flex items-center text-rose-700">
+                <AlertCircle className="w-3.5 h-3.5 mr-1" />
+                Validación de Mora Proyectada: {projectedLateFee.daysPastDue} días de atraso
+              </div>
+              <div className="grid grid-cols-2 text-[11px] text-rose-800">
+                <span>Interés Moratorio ({params.dailyLateRate}%/d): +{formatCurrency(projectedLateFee.dailyLateInterest, params.currency)}</span>
+                <span>Comisión Cobranza Fija: +{formatCurrency(projectedLateFee.fixedLateFee, params.currency)}</span>
+              </div>
+              <p className="text-[10px] text-rose-600">
+                Total Mora a liquidar: <strong>{formatCurrency(projectedLateFee.totalLateFee, params.currency)}</strong>
+              </p>
             </div>
-            {targetInstallment.lateFee > 0 && (
-              <span className="text-[11px] font-bold text-rose-600 block">
-                (Mora: +{targetInstallment.lateFee.toFixed(2)})
-              </span>
-            )}
-          </div>
+          )}
         </div>
       )}
 
@@ -112,7 +145,7 @@ const PaymentSimulatorForm: React.FC<FormInnerProps> = ({
             onChange={(e) => setPaymentCurrency(e.target.value as Currency)}
             className="w-full py-2.5 px-3 text-xs font-bold rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-blue-500"
           >
-            {(['PEN', 'USD', 'MXN', 'COP'] as Currency[]).map((c) => (
+            {currencies.map((c) => (
               <option key={c} value={c}>
                 {CURRENCY_CONFIGS[c].flag} {c}
               </option>
@@ -148,8 +181,10 @@ const PaymentSimulatorForm: React.FC<FormInnerProps> = ({
           <div>
             <span className="font-bold">Conversión al Tipo de Cambio:</span>
             <p className="text-[11px] text-blue-600">
-              {amount} {paymentCurrency} = {convertedAmount.toFixed(2)}{' '}
-              {params.currency} (T.C. {params.exchangeRate})
+              {formatCurrency(amount, paymentCurrency)} = {formatCurrency(convertedAmount, params.currency)}{' '}
+              {paymentCurrency === 'VES' || params.currency === 'VES'
+                ? `(Tasa BCV: Bs. ${bcvRate})`
+                : `(T.C.: ${params.exchangeRate})`}
             </p>
           </div>
           <Coins className="w-5 h-5 text-blue-600" />
@@ -179,7 +214,7 @@ const PaymentSimulatorForm: React.FC<FormInnerProps> = ({
             }
             className="text-xs font-semibold px-2.5 py-1 bg-blue-50 hover:bg-blue-100 rounded-lg text-blue-700 transition-colors"
           >
-            Cuota + Abono Extra
+            Cuota + Abono Extra (Pagar de Más)
           </button>
           <button
             type="button"
@@ -208,15 +243,20 @@ const PaymentSimulatorForm: React.FC<FormInnerProps> = ({
           />
         </div>
         <p className="text-[11px] text-slate-500">
-          Si la fecha es posterior al vencimiento, se calcularán intereses moratorios automáticamente.
+          Si la fecha supera los días de tolerancia de mora, se aplican los intereses moratorios y comisiones.
         </p>
       </div>
 
       {/* Prepayment Strategy */}
       <div className="space-y-2 pt-1">
-        <label className="block text-xs font-semibold text-slate-700">
-          En caso de Excedente / Prepago Extra:
-        </label>
+        <div className="flex items-center justify-between">
+          <label className="block text-xs font-semibold text-slate-700">
+            Método Interés sobre Saldo al Pagar de Más (Excedente):
+          </label>
+          <span className="text-[10px] text-purple-700 font-semibold bg-purple-50 px-2 py-0.5 rounded">
+            Recálculo de Crédito
+          </span>
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -228,8 +268,8 @@ const PaymentSimulatorForm: React.FC<FormInnerProps> = ({
             }`}
           >
             <div>Reducir Cuota</div>
-            <span className="text-[10px] text-slate-500 font-normal">
-              Mantiene el número de meses, baja el monto
+            <span className="text-[10px] text-slate-500 font-normal block">
+              Disminuye las cuotas futuras calculando intereses sobre el nuevo saldo insoluto menor.
             </span>
           </button>
           <button
@@ -242,8 +282,8 @@ const PaymentSimulatorForm: React.FC<FormInnerProps> = ({
             }`}
           >
             <div>Reducir Plazo</div>
-            <span className="text-[10px] text-slate-500 font-normal">
-              Cancela cuotas finales, termina antes
+            <span className="text-[10px] text-slate-500 font-normal block">
+              Cancela cuotas finales de capital y elimina por completo sus intereses.
             </span>
           </button>
         </div>
@@ -253,10 +293,10 @@ const PaymentSimulatorForm: React.FC<FormInnerProps> = ({
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-1">
         <div className="font-bold text-slate-800 text-[11px] flex items-center">
           <Sparkles className="w-3.5 h-3.5 mr-1 text-blue-600" />
-          Regla de Prelación de Pagos (Fintech/Banca):
+          Regla de Prelación de Pagos (Payment Waterfall):
         </div>
         <p className="text-[11px]">
-          1° Mora y Penalidades &rarr; 2° Gastos y Seguros &rarr; 3° Interés Compensatorio &rarr; 4° Capital Exigible &rarr; 5° Amortización Anticipada.
+          1° Mora &rarr; 2° Comisiones & Gastos &rarr; 3° Seguros &rarr; 4° Interés Compensatorio &rarr; 5° Capital Exigible &rarr; 6° Abono Extraordinario a Saldo.
         </p>
       </div>
 
@@ -298,33 +338,29 @@ export const PaymentSimulatorModal: React.FC<PaymentSimulatorModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
       <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-blue-900 to-indigo-900 text-white flex items-center justify-between">
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div className="flex items-center space-x-2.5">
-            <div className="p-2 bg-blue-700/60 rounded-xl">
-              <CreditCard className="w-5 h-5 text-blue-200" />
+            <div className="p-2 bg-blue-100 text-blue-700 rounded-xl">
+              <CreditCard className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">
-                Simulador de Pago de Crédito
+              <h3 className="text-base font-bold text-slate-900">
+                Simulador de Abonos & Pagos
               </h3>
-              <p className="text-xs text-blue-200">
-                {targetInstallment
-                  ? `Aplicar pago a Cuota #${targetInstallment.number}`
-                  : 'Abono general en cascada al cronograma'}
+              <p className="text-xs text-slate-500">
+                Aplica la prelación legal y recalcula sobre saldo si pagas de más
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-blue-300 hover:text-white hover:bg-blue-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Keyed inner form ensuring fresh state on target change without useEffect */}
         <PaymentSimulatorForm
-          key={targetInstallment ? `inst_${targetInstallment.number}` : 'generic'}
           targetInstallment={targetInstallment}
           targetInstallmentNumber={targetInstallmentNumber}
           onClose={onClose}

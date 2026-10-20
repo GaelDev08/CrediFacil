@@ -8,7 +8,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { useCreditStore } from '../../store/useCreditStore';
-import { CURRENCY_CONFIGS } from '../../engine/currency';
+import { CURRENCY_CONFIGS, formatCurrency } from '../../engine/currency';
 import { calculatePeriodicRate, round } from '../../engine/formulas';
 import type {
   AmortizationMethod,
@@ -24,6 +24,9 @@ export const LoanForm: React.FC = () => {
     setLoanParam,
     isAdvancedOpen,
     setIsAdvancedOpen,
+    summary,
+    displayCurrency,
+    setDisplayCurrency,
   } = useCreditStore();
 
   const periodicRateDecimal = calculatePeriodicRate(
@@ -37,24 +40,31 @@ export const LoanForm: React.FC = () => {
     {
       id: 'french',
       title: 'Francesa',
-      subtitle: 'Cuota fija mensual',
+      subtitle: 'Cuota fija periódica',
     },
     {
       id: 'german',
       title: 'Alemana',
-      subtitle: 'Capital constante',
+      subtitle: 'Amortización de capital constante',
+    },
+    {
+      id: 'interest_balance',
+      title: 'Interés sobre Saldo',
+      subtitle: 'Interés sobre saldo insoluto y recálculo con pagos de más',
     },
     {
       id: 'flat',
       title: 'Tasa Plana',
-      subtitle: 'Interés simple',
+      subtitle: 'Interés simple fijo',
     },
   ];
 
-  const frequencies: { id: PaymentFrequency; label: string }[] = [
-    { id: 'monthly', label: 'Mensual (30d)' },
-    { id: 'biweekly', label: 'Quincenal (15d)' },
-    { id: 'weekly', label: 'Semanal (7d)' },
+  const frequencies: { id: PaymentFrequency; label: string; sub: string }[] = [
+    { id: 'annual', label: 'Anual', sub: '360d' },
+    { id: 'monthly', label: 'Mensual', sub: '30d' },
+    { id: 'biweekly', label: 'Quincenal', sub: '15d' },
+    { id: 'weekly', label: 'Semanal', sub: '7d' },
+    { id: 'daily', label: 'Diario', sub: '1d' },
   ];
 
   const rateTypes: { id: RateType; label: string; desc: string }[] = [
@@ -64,33 +74,51 @@ export const LoanForm: React.FC = () => {
   ];
 
   const currentCurrency = CURRENCY_CONFIGS[params.currency];
+  const currencies: Currency[] = ['PEN', 'USD', 'MXN', 'COP', 'VES'];
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6 space-y-6">
-      <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
         <div className="flex items-center space-x-2.5">
           <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
             <Calculator className="w-5 h-5" />
           </div>
           <div>
             <h2 className="text-base font-bold text-slate-900">Configuración del Crédito</h2>
-            <p className="text-xs text-slate-500">Parámetros principales de la operación crediticia</p>
+            <p className="text-xs text-slate-500">
+              Moneda base: <span className="font-semibold text-slate-800">{currentCurrency.name} ({params.currency})</span>
+            </p>
           </div>
         </div>
-        <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-lg">
-          {(['PEN', 'USD', 'MXN', 'COP'] as Currency[]).map((c) => (
+
+        {/* Selector de Moneda del Crédito (Desembolso y Contrato) */}
+        <div className="flex flex-col items-end space-y-1">
+          <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg">
+            {currencies.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setLoanParam('currency', c)}
+                className={`px-2 py-1 text-xs font-bold rounded-md transition-all ${
+                  params.currency === c
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+                title={`Configurar y desembolsar crédito en ${CURRENCY_CONFIGS[c].name}`}
+              >
+                {CURRENCY_CONFIGS[c].flag} {c}
+              </button>
+            ))}
+          </div>
+          {params.currency !== displayCurrency && (
             <button
-              key={c}
-              onClick={() => setLoanParam('currency', c)}
-              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
-                params.currency === c
-                  ? 'bg-white text-blue-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
+              type="button"
+              onClick={() => setDisplayCurrency(params.currency)}
+              className="text-[10px] text-blue-600 hover:underline font-semibold"
             >
-              {CURRENCY_CONFIGS[c].flag} {c}
+              Restablecer visualización a {params.currency}
             </button>
-          ))}
+          )}
         </div>
       </div>
 
@@ -117,7 +145,7 @@ export const LoanForm: React.FC = () => {
             />
           </div>
           <div className="flex gap-1.5 pt-1">
-            {[1000, 5000, 10000, 20000].map((amt) => (
+            {[1000, 5000, 10000, 25000, 50000].map((amt) => (
               <button
                 key={amt}
                 type="button"
@@ -207,22 +235,34 @@ export const LoanForm: React.FC = () => {
 
         {/* Payment Frequency */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-semibold text-slate-700">
-            Frecuencia de Pago
-          </label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-semibold text-slate-700">
+              Frecuencia de Pago
+            </label>
+            <span className="text-[11px] font-semibold text-blue-600">
+              {frequencies.find((f) => f.id === params.frequency)?.label} ({frequencies.find((f) => f.id === params.frequency)?.sub})
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
             {frequencies.map((freq) => (
               <button
                 key={freq.id}
                 type="button"
                 onClick={() => setLoanParam('frequency', freq.id)}
-                className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition-all ${
+                className={`py-2 px-1 rounded-xl text-center border transition-all ${
                   params.frequency === freq.id
-                    ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-sm'
+                    ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-500 font-bold'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                {freq.label}
+                <div className="text-xs font-bold leading-tight">{freq.label}</div>
+                <div
+                  className={`text-[10px] mt-0.5 ${
+                    params.frequency === freq.id ? 'text-blue-600 font-semibold' : 'text-slate-400'
+                  }`}
+                >
+                  {freq.sub}
+                </div>
               </button>
             ))}
           </div>
@@ -234,28 +274,28 @@ export const LoanForm: React.FC = () => {
         <label className="block text-xs font-semibold text-slate-700">
           Método de Amortización
         </label>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
           {methods.map((m) => {
             const isSelected = params.method === m.id;
             return (
               <div
                 key={m.id}
                 onClick={() => setLoanParam('method', m.id)}
-                className={`cursor-pointer p-3.5 rounded-xl border-2 transition-all relative ${
+                className={`cursor-pointer p-3 rounded-xl border-2 transition-all relative ${
                   isSelected
-                    ? 'border-blue-600 bg-blue-50/60 shadow-sm'
+                    ? 'border-blue-600 bg-blue-50/70 shadow-sm'
                     : 'border-slate-200 bg-white hover:border-slate-300'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className={`text-sm font-bold ${isSelected ? 'text-blue-900' : 'text-slate-800'}`}>
+                  <span className={`text-xs font-bold ${isSelected ? 'text-blue-900' : 'text-slate-800'}`}>
                     {m.title}
                   </span>
                   {isSelected && (
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+                    <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                   )}
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">{m.subtitle}</p>
+                <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">{m.subtitle}</p>
               </div>
             );
           })}
@@ -334,7 +374,7 @@ export const LoanForm: React.FC = () => {
         >
           <div className="flex items-center space-x-2">
             <Sliders className="w-4 h-4 text-blue-600" />
-            <span>Parámetros Avanzados de Microfinanzas (Seguros, Comisiones y Mora)</span>
+            <span>Gastos de Desembolso, Comisiones Administrativas y Validación de Mora</span>
           </div>
           {isAdvancedOpen ? (
             <ChevronUp className="w-4 h-4 text-slate-500" />
@@ -344,9 +384,115 @@ export const LoanForm: React.FC = () => {
         </button>
 
         {isAdvancedOpen && (
-          <div className="mt-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-4">
+          <div className="mt-3 p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {/* Desgravamen */}
+              {/* Gastos de Desembolso (%) */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Gastos de Desembolso (%)
+                  </label>
+                  <span className="text-[10px] text-blue-600 font-medium">Comisión inicial</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="30"
+                    value={params.disbursementFeePercent || ''}
+                    onChange={(e) =>
+                      setLoanParam('disbursementFeePercent', parseFloat(e.target.value) || 0)
+                    }
+                    placeholder="0"
+                    className="w-full px-3 py-2 text-xs font-bold rounded-lg border border-slate-300 bg-white"
+                  />
+                  <span className="absolute right-3 top-2 text-xs text-slate-400">%</span>
+                </div>
+                {params.disbursementFeePercent && params.disbursementFeePercent > 0 ? (
+                  <p className="text-[11px] text-amber-700 font-semibold bg-amber-50 p-1.5 rounded border border-amber-200/60">
+                    Deducción: {formatCurrency(summary.disbursementFee, params.currency)} | Neto: {formatCurrency(summary.netDisbursement, params.currency)}
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-slate-500">
+                    Si es 0%, se desembolsa el 100% y aplica cálculo normal.
+                  </p>
+                )}
+              </div>
+
+              {/* Gastos Administrativos (% o Fijo) */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Gastos Administrativos
+                  </label>
+                  <div className="inline-flex rounded bg-slate-200 p-0.5 text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setLoanParam('adminFeeType', 'percentage')}
+                      className={`px-1.5 py-0.5 rounded ${
+                        params.adminFeeType === 'percentage'
+                          ? 'bg-white text-blue-700 shadow-xs'
+                          : 'text-slate-600'
+                      }`}
+                    >
+                      % Saldo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLoanParam('adminFeeType', 'fixed')}
+                      className={`px-1.5 py-0.5 rounded ${
+                        params.adminFeeType !== 'percentage'
+                          ? 'bg-white text-blue-700 shadow-xs'
+                          : 'text-slate-600'
+                      }`}
+                    >
+                      Fijo
+                    </button>
+                  </div>
+                </div>
+
+                {params.adminFeeType === 'percentage' ? (
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      value={params.adminFeePercent || ''}
+                      onChange={(e) =>
+                        setLoanParam('adminFeePercent', parseFloat(e.target.value) || 0)
+                      }
+                      placeholder="0"
+                      className="w-full px-3 py-2 text-xs font-bold rounded-lg border border-slate-300 bg-white"
+                    />
+                    <span className="absolute right-3 top-2 text-xs text-slate-400">% período</span>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={params.adminFee || ''}
+                      onChange={(e) =>
+                        setLoanParam('adminFee', parseFloat(e.target.value) || 0)
+                      }
+                      placeholder="0"
+                      className="w-full px-3 py-2 text-xs font-bold rounded-lg border border-slate-300 bg-white"
+                    />
+                    <span className="absolute right-3 top-2 text-xs text-slate-400">
+                      {currentCurrency.symbol}
+                    </span>
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-500">
+                  {params.adminFeeType === 'percentage'
+                    ? '% sobre saldo deudor. Si es 0%, cálculo normal.'
+                    : 'Monto fijo por cuota emitida. Si es 0, cálculo normal.'}
+                </p>
+              </div>
+
+              {/* Seguro Desgravamen */}
               <div className="space-y-1">
                 <label className="block text-xs font-semibold text-slate-700">
                   Seguro Desgravamen (% mensual)
@@ -356,38 +502,16 @@ export const LoanForm: React.FC = () => {
                     type="number"
                     step="0.01"
                     min="0"
-                    value={params.desgravamenRate}
+                    value={params.desgravamenRate || ''}
                     onChange={(e) =>
                       setLoanParam('desgravamenRate', parseFloat(e.target.value) || 0)
                     }
+                    placeholder="0"
                     className="w-full px-3 py-2 text-xs font-bold rounded-lg border border-slate-300 bg-white"
                   />
                   <span className="absolute right-3 top-2 text-xs text-slate-400">%</span>
                 </div>
-                <p className="text-[10px] text-slate-500">Calculado sobre saldo deudor</p>
-              </div>
-
-              {/* Admin Fee */}
-              <div className="space-y-1">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Comisión Administrativa Fija
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    value={params.adminFee}
-                    onChange={(e) =>
-                      setLoanParam('adminFee', parseFloat(e.target.value) || 0)
-                    }
-                    className="w-full px-3 py-2 text-xs font-bold rounded-lg border border-slate-300 bg-white"
-                  />
-                  <span className="absolute right-3 top-2 text-xs text-slate-400">
-                    {currentCurrency.symbol}
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-500">Gasto fijo por cada cuota emitida</p>
+                <p className="text-[10px] text-slate-500">Calculado sobre saldo insoluto</p>
               </div>
 
               {/* Tasa Moratoria Diaria */}
@@ -408,13 +532,13 @@ export const LoanForm: React.FC = () => {
                   />
                   <span className="absolute right-3 top-2 text-xs text-slate-400">% / día</span>
                 </div>
-                <p className="text-[10px] text-slate-500">Aplica sobre capital vencido</p>
+                <p className="text-[10px] text-slate-500">Aplica sobre capital vencido tras tolerancia</p>
               </div>
 
               {/* Fixed Late Penalty */}
               <div className="space-y-1">
                 <label className="block text-xs font-semibold text-slate-700">
-                  Comisión Fija por Gestión de Mora
+                  Comisión Fija de Gestión de Mora
                 </label>
                 <div className="relative">
                   <input
@@ -431,7 +555,7 @@ export const LoanForm: React.FC = () => {
                     {currentCurrency.symbol}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-500">Cobro único tras superar días de gracia</p>
+                <p className="text-[10px] text-slate-500">Cobro único de cobranza por cuota vencida</p>
               </div>
 
               {/* Grace Days for Late Fees */}
@@ -442,14 +566,14 @@ export const LoanForm: React.FC = () => {
                 <input
                   type="number"
                   min="0"
-                  max="10"
+                  max="15"
                   value={params.graceDaysLate}
                   onChange={(e) =>
                     setLoanParam('graceDaysLate', parseInt(e.target.value) || 0)
                   }
                   className="w-full px-3 py-2 text-xs font-bold rounded-lg border border-slate-300 bg-white"
                 />
-                <p className="text-[10px] text-slate-500">Días antes de activar mora y comisión</p>
+                <p className="text-[10px] text-slate-500">Días sin cobro de mora después del vencimiento</p>
               </div>
 
               {/* Disbursement Date */}
