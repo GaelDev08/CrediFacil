@@ -176,4 +176,93 @@ describe('Payment Simulation Engine', () => {
     expect(lastInst.principal).toBe(0);
     expect(lastInst.interest).toBe(0);
   });
+
+  it('handles split currency payment (USD cash + PEN bank deposit)', () => {
+    const usdParams: LoanParams = {
+      ...testParams,
+      currency: 'USD',
+      principal: 1200,
+      term: 2,
+      exchangeRate: 3.75,
+    };
+    const schedule = generateAmortizationSchedule(usdParams);
+    const inst1 = schedule[0]; // e.g. ~618.12 USD
+
+    // Client pays $300 USD in cash and the rest in PEN via bank deposit
+    const usdPortion = 300;
+    const penNeeded = Math.round((inst1.totalInstallment - usdPortion) * 3.75 * 100) / 100;
+
+    const result = simulatePayment({
+      schedule,
+      loanParams: usdParams,
+      paymentDate: inst1.dueDate,
+      amount: inst1.totalInstallment,
+      paymentCurrency: 'USD',
+      targetInstallmentNumber: 1,
+      channel: 'cash',
+      isSplitPayment: true,
+      splitDetails: {
+        usdAmount: usdPortion,
+        usdChannel: 'cash',
+        localAmount: penNeeded,
+        localCurrency: 'PEN',
+        localChannel: 'bank_transfer',
+        referenceNumber: 'DEP-BCRP-9821',
+        exchangeRateUsed: 3.75,
+        totalInLoanCurrency: inst1.totalInstallment,
+      },
+    });
+
+    expect(result.updatedSchedule[0].status).toBe('paid');
+    expect(result.paymentRecord.isSplitPayment).toBe(true);
+    expect(result.paymentRecord.splitDetails?.usdAmount).toBe(300);
+    expect(result.paymentRecord.splitDetails?.usdChannel).toBe('cash');
+    expect(result.paymentRecord.splitDetails?.localChannel).toBe('bank_transfer');
+    expect(result.paymentRecord.splitDetails?.referenceNumber).toBe('DEP-BCRP-9821');
+    expect(result.updatedSchedule[0].paymentReference).toBe('DEP-BCRP-9821');
+  });
+
+  it('handles split payment in Venezuela (USD cash + VES transfer at BCV rate)', () => {
+    const vesParams: LoanParams = {
+      ...testParams,
+      currency: 'VES',
+      principal: 88000,
+      term: 2,
+      bcvExchangeRate: 880,
+    };
+    const schedule = generateAmortizationSchedule(vesParams);
+    const inst1 = schedule[0]; // e.g. ~45,325 VES
+
+    // Client pays $20 USD cash ($20 * 880 = 17,600 VES) and the rest in VES bank transfer
+    const usdPortion = 20;
+    const usdInVes = usdPortion * 880;
+    const vesPortion = Math.round((inst1.totalInstallment - usdInVes) * 100) / 100;
+
+    const result = simulatePayment({
+      schedule,
+      loanParams: vesParams,
+      paymentDate: inst1.dueDate,
+      amount: inst1.totalInstallment,
+      paymentCurrency: 'VES',
+      targetInstallmentNumber: 1,
+      isSplitPayment: true,
+      splitDetails: {
+        usdAmount: usdPortion,
+        usdChannel: 'cash',
+        localAmount: vesPortion,
+        localCurrency: 'VES',
+        localChannel: 'bank_transfer',
+        referenceNumber: 'PAGOMOVIL-BCV-4412',
+        exchangeRateUsed: 880,
+        totalInLoanCurrency: inst1.totalInstallment,
+      },
+    });
+
+    expect(result.updatedSchedule[0].status).toBe('paid');
+    expect(result.paymentRecord.isSplitPayment).toBe(true);
+    expect(result.paymentRecord.splitDetails?.usdAmount).toBe(20);
+    expect(result.paymentRecord.splitDetails?.usdChannel).toBe('cash');
+    expect(result.paymentRecord.splitDetails?.localChannel).toBe('bank_transfer');
+    expect(result.paymentRecord.splitDetails?.referenceNumber).toBe('PAGOMOVIL-BCV-4412');
+  });
 });

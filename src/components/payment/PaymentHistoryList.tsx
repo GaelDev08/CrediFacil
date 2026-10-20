@@ -70,6 +70,22 @@ export const PaymentHistoryList: React.FC = () => {
                     Cuota #{p.targetInstallmentNumber}
                   </span>
                 )}
+                {/* Canal y Referencia */}
+                <span
+                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
+                    p.channel === 'cash'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-blue-50 text-blue-700 border border-blue-200'
+                  }`}
+                >
+                  {p.channel === 'cash' ? '💵 Efectivo' : '🏦 Depósito'}
+                  {p.referenceNumber ? ` (${p.referenceNumber})` : ''}
+                </span>
+                {p.isSplitPayment && (
+                  <span className="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded-md">
+                    ⚡ Pago Mixto
+                  </span>
+                )}
               </div>
               <div className="text-sm font-black text-slate-900">
                 {formatCurrency(p.amount, p.currency)}
@@ -80,6 +96,25 @@ export const PaymentHistoryList: React.FC = () => {
                 )}
               </div>
             </div>
+
+            {/* Si es un pago mixto, mostrar desglose visual de ambos tramos */}
+            {p.isSplitPayment && p.splitDetails && (
+              <div className="bg-white p-2 rounded-lg border border-slate-200 text-[11px] text-slate-700 flex flex-wrap items-center justify-between gap-1.5">
+                <div>
+                  <span className="font-bold text-slate-900">Tramo USD: </span>
+                  ${p.splitDetails.usdAmount.toFixed(2)} USD ({p.splitDetails.usdChannel === 'cash' ? 'Efectivo' : 'Depósito'})
+                </div>
+                <div>
+                  <span className="font-bold text-slate-900">Tramo Local: </span>
+                  {CURRENCY_CONFIGS[p.splitDetails.localCurrency]?.symbol} {p.splitDetails.localAmount.toFixed(2)} {p.splitDetails.localCurrency} ({p.splitDetails.localChannel === 'cash' ? 'Efectivo' : 'Depósito'})
+                </div>
+                {p.splitDetails.referenceNumber && (
+                  <div className="text-slate-500 font-medium">
+                    Ref: {p.splitDetails.referenceNumber}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Waterfall breakdown badges */}
             <div className="flex flex-wrap gap-1.5 pt-1">

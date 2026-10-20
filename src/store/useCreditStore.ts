@@ -5,6 +5,8 @@ import type {
   LoanParams,
   LoanSummary,
   MethodComparisonItem,
+  PaymentChannel,
+  PaymentCurrencySplit,
   PaymentSimulation,
 } from '../types';
 import {
@@ -219,6 +221,10 @@ interface CreditState {
     paymentCurrency: Currency;
     targetInstallmentNumber?: number;
     prepaymentStrategy?: 'reduce_term' | 'reduce_installment';
+    channel?: PaymentChannel;
+    referenceNumber?: string;
+    isSplitPayment?: boolean;
+    splitDetails?: PaymentCurrencySplit;
   }) => PaymentSimulation;
   resetPayments: () => void;
   resetToDefaults: () => void;
@@ -245,6 +251,10 @@ function computeState(
       paymentCurrency: pay.currency,
       targetInstallmentNumber: pay.targetInstallmentNumber,
       prepaymentStrategy: pay.prepaymentStrategy,
+      channel: pay.channel,
+      referenceNumber: pay.referenceNumber,
+      isSplitPayment: pay.isSplitPayment,
+      splitDetails: pay.splitDetails,
     });
     currentSchedule = res.updatedSchedule;
     replayedPayments.push(res.paymentRecord);
@@ -418,6 +428,10 @@ export const useCreditStore = create<CreditState>((set, get) => {
         paymentCurrency: paymentData.paymentCurrency,
         targetInstallmentNumber: paymentData.targetInstallmentNumber,
         prepaymentStrategy: paymentData.prepaymentStrategy,
+        channel: paymentData.channel,
+        referenceNumber: paymentData.referenceNumber,
+        isSplitPayment: paymentData.isSplitPayment,
+        splitDetails: paymentData.splitDetails,
       });
 
       const updatedPayments = [...payments, result.paymentRecord];

@@ -19,6 +19,19 @@ export type GracePeriodType = 'none' | 'partial' | 'total';
 
 export type InstallmentStatus = 'pending' | 'paid' | 'partial' | 'overdue' | 'grace';
 
+export type PaymentChannel = 'cash' | 'bank_transfer';
+
+export interface PaymentCurrencySplit {
+  usdAmount: number;
+  usdChannel: PaymentChannel;
+  localAmount: number;
+  localCurrency: Currency;
+  localChannel: PaymentChannel;
+  referenceNumber?: string;
+  exchangeRateUsed: number;
+  totalInLoanCurrency: number;
+}
+
 export interface LoanParams {
   id?: string;
   name?: string;
@@ -65,6 +78,9 @@ export interface Installment {
   lateFee: number; // accrued late penalty
   amountPaid: number;
   paidDate?: string;
+  paymentChannel?: PaymentChannel;
+  paymentReference?: string;
+  isSplitPayment?: boolean;
   remainingDue: number; // totalInstallment + lateFee - amountPaid
 }
 
@@ -75,6 +91,10 @@ export interface PaymentSimulation {
   currency: Currency;
   convertedAmount: number; // Amount in loan currency
   exchangeRateUsed: number;
+  channel?: PaymentChannel; // 'cash' | 'bank_transfer'
+  referenceNumber?: string; // N° de comprobante / referencia bancaria
+  isSplitPayment?: boolean;
+  splitDetails?: PaymentCurrencySplit;
   targetInstallmentNumber?: number; // specific installment or automatic cascade
   prepaymentStrategy?: 'reduce_term' | 'reduce_installment';
   allocation: {

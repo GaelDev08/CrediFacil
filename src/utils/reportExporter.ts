@@ -327,10 +327,15 @@ export function exportToCSVFile(
       `"Estado"`,
       `"Monto Pagado"`,
       `"Fecha de Pago"`,
+      `"Canal / Medio de Pago"`,
     ].join(d),
   ];
 
   for (const item of schedule) {
+    const channelDesc = item.paymentChannel
+      ? `${item.paymentChannel === 'cash' ? 'Efectivo' : 'Depósito'}${item.isSplitPayment ? ' (Mixto)' : ''}${item.paymentReference ? ` - Ref: ${item.paymentReference}` : ''}`
+      : '';
+
     const row = [
       item.number,
       `"${item.dueDate}"`,
@@ -345,6 +350,7 @@ export function exportToCSVFile(
       `"${item.status.toUpperCase()}"`,
       item.amountPaid.toFixed(2),
       item.paidDate ? `"${item.paidDate}"` : `""`,
+      `"${channelDesc}"`,
     ];
     lines.push(row.join(d));
   }
@@ -364,6 +370,7 @@ export function exportToCSVFile(
       `"0.00"`,
       `"TCEA: ${summary.tcea.toFixed(2)}%"`,
       summary.totalPaid.toFixed(2),
+      `""`,
       `""`,
     ].join(d)
   );

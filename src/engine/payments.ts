@@ -2,6 +2,8 @@ import type {
   Currency,
   Installment,
   LoanParams,
+  PaymentChannel,
+  PaymentCurrencySplit,
   PaymentSimulation,
 } from '../types';
 import { calculateFrenchInstallment, calculatePeriodicRate, round } from './formulas';
@@ -16,12 +18,42 @@ export interface ApplyPaymentParams {
   paymentCurrency: Currency;
   targetInstallmentNumber?: number; // specific installment or cascading
   prepaymentStrategy?: 'reduce_term' | 'reduce_installment';
+  channel?: PaymentChannel;
+  referenceNumber?: string;
+  isSplitPayment?: boolean;
+  splitDetails?: PaymentCurrencySplit;
 }
 
 export interface ApplyPaymentResult {
   updatedSchedule: Installment[];
   paymentRecord: PaymentSimulation;
   remainingCash: number;
+}
+
+/**
+ * Calculates consolidated equivalent in loan currency for a split-currency payment (e.g. USD cash + VES transfer).
+ */
+export function calculateSplitPaymentTotal(
+  usdAmount: number,
+  localAmount: number,
+  localCurrency: Currency,
+  loanCurrency: Currency,
+  usdPenRate: number = 3.75,
+  bcvVesRate: number = 881.88
+): {
+  totalInLoanCurrency: number;
+  usdConverted: number;
+  localConverted: number;
+} {
+  const usdConverted = convertCurrency(usdAmount, 'USD', loanCurrency, usdPenRate, bcvVesRate);
+  const localConverted = convertCurrency(localAmount, localCurrency, loanCurrency, usdPenRate, bcvVesRate);
+  const totalInLoanCurrency = round(usdConverted + localConverted, 2);
+
+  return {
+    totalInLoanCurrency,
+    usdConverted,
+    localConverted,
+  };
 }
 
 /**
@@ -55,16 +87,33 @@ export function simulatePayment(params: ApplyPaymentParams): ApplyPaymentResult 
     paymentCurrency,
     targetInstallmentNumber,
     prepaymentStrategy = 'reduce_installment',
+    channel = 'cash',
+    referenceNumber,
+    isSplitPayment = false,
+    splitDetails,
   } = params;
 
-  // Convert to loan's base currency
-  const convertedAmount = convertPaymentCurrency(
-    amount,
-    paymentCurrency,
-    loanParams.currency,
-    loanParams.exchangeRate,
-    loanParams.bcvExchangeRate || 881.88
-  );
+  // Si es un pago combinado (split), consolidar ambas partes a la moneda base del préstamo
+  let convertedAmount = 0;
+  if (isSplitPayment && splitDetails) {
+    const splitCalc = calculateSplitPaymentTotal(
+      splitDetails.usdAmount,
+      splitDetails.localAmount,
+      splitDetails.localCurrency,
+      loanParams.currency,
+      loanParams.exchangeRate,
+      loanParams.bcvExchangeRate || 881.88
+    );
+    convertedAmount = splitCalc.totalInLoanCurrency;
+  } else {
+    convertedAmount = convertPaymentCurrency(
+      amount,
+      paymentCurrency,
+      loanParams.currency,
+      loanParams.exchangeRate,
+      loanParams.bcvExchangeRate || 881.88
+    );
+  }
 
   let cash = convertedAmount;
   const updatedSchedule: Installment[] = JSON.parse(JSON.stringify(originalSchedule));
@@ -160,11 +209,17 @@ export function simulatePayment(params: ApplyPaymentParams): ApplyPaymentResult 
     if (remainingDebt === 0) {
       item.status = 'paid';
       item.paidDate = paymentDate;
+      item.paymentChannel = channel || (isSplitPayment ? splitDetails?.usdChannel : 'cash');
+      item.paymentReference = referenceNumber || splitDetails?.referenceNumber;
+      item.isSplitPayment = isSplitPayment;
       item.daysPastDue = 0;
       item.lateFee = 0;
     } else {
       item.daysPastDue = late.daysPastDue;
       item.status = late.daysPastDue > 0 ? 'overdue' : 'partial';
+      item.paymentChannel = channel || (isSplitPayment ? splitDetails?.usdChannel : 'cash');
+      item.paymentReference = referenceNumber || splitDetails?.referenceNumber;
+      item.isSplitPayment = isSplitPayment;
     }
   }
 
@@ -289,16 +344,48 @@ export function simulatePayment(params: ApplyPaymentParams): ApplyPaymentResult 
   }
 
   // Build simulation log record
+  const effectiveChannel = channel || (isSplitPayment ? splitDetails?.usdChannel : 'cash');
+  const effectiveRef = referenceNumber || splitDetails?.referenceNumber;
+
+  let summaryText = '';
+  if (isSplitPayment && splitDetails) {
+    const usdCh = splitDetails.usdChannel === 'cash' ? 'Efectivo' : 'Depósito';
+    const locCh = splitDetails.localChannel === 'cash' ? 'Efectivo' : 'Depósito';
+    const refStr = splitDetails.referenceNumber ? ` (Ref: ${splitDetails.referenceNumber})` : '';
+    summaryText = `Pago Mixto: $${splitDetails.usdAmount.toFixed(2)} USD [${usdCh}] + ${splitDetails.localCurrency} ${splitDetails.localAmount.toFixed(2)} [${locCh}${refStr}] = Consolidado ${loanParams.currency} ${convertedAmount.toFixed(2)}`;
+  } else {
+    const chLabel = effectiveChannel === 'cash' ? 'Efectivo' : `Depósito Bancario${effectiveRef ? ` (Ref: ${effectiveRef})` : ''}`;
+    summaryText = `Abono de ${paymentCurrency} ${amount.toFixed(2)} [${chLabel}]${
+      paymentCurrency !== loanParams.currency
+        ? ` (≈ ${loanParams.currency} ${convertedAmount.toFixed(2)})`
+        : ''
+    }`;
+  }
+
+  summaryText += `: Mora: ${allocation.lateFeePaid.toFixed(2)}, Interés: ${allocation.interestPaid.toFixed(2)}, Capital: ${(
+    allocation.principalPaid + allocation.extraPrepayment
+  ).toFixed(2)}${
+    allocation.extraPrepayment > 0
+      ? ` [Abono Extra a Capital: ${allocation.extraPrepayment.toFixed(2)} - Recalculado con Interés sobre Saldo (${
+          prepaymentStrategy === 'reduce_term' ? 'Reducción de Plazo' : 'Reducción de Cuota'
+        })]`
+      : ''
+  }`;
+
   const paymentRecord: PaymentSimulation = {
     id: `pay_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     paymentDate,
-    amount,
-    currency: paymentCurrency,
+    amount: isSplitPayment && splitDetails ? convertedAmount : amount,
+    currency: isSplitPayment && splitDetails ? loanParams.currency : paymentCurrency,
     convertedAmount,
     exchangeRateUsed:
       paymentCurrency === 'VES' || loanParams.currency === 'VES'
         ? loanParams.bcvExchangeRate || 881.88
         : loanParams.exchangeRate,
+    channel: effectiveChannel,
+    referenceNumber: effectiveRef,
+    isSplitPayment,
+    splitDetails,
     targetInstallmentNumber,
     prepaymentStrategy,
     allocation: {
@@ -309,19 +396,7 @@ export function simulatePayment(params: ApplyPaymentParams): ApplyPaymentResult 
       principalPaid: round(allocation.principalPaid, 2),
       extraPrepayment: round(allocation.extraPrepayment, 2),
     },
-    impactSummary: `Abono de ${paymentCurrency} ${amount.toFixed(2)}${
-      paymentCurrency !== loanParams.currency
-        ? ` (${loanParams.currency} ${convertedAmount.toFixed(2)})`
-        : ''
-    }: Mora: ${allocation.lateFeePaid.toFixed(2)}, Interés: ${allocation.interestPaid.toFixed(2)}, Capital: ${(
-      allocation.principalPaid + allocation.extraPrepayment
-    ).toFixed(2)}${
-      allocation.extraPrepayment > 0
-        ? ` [Abono Extra a Capital: ${allocation.extraPrepayment.toFixed(2)} - Crédito actualizado con método Interés sobre Saldo (${
-            prepaymentStrategy === 'reduce_term' ? 'Reducción de Plazo' : 'Reducción de Cuota'
-          })]`
-        : ''
-    }`,
+    impactSummary: summaryText,
   };
 
   return {

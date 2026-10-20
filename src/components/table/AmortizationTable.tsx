@@ -322,10 +322,18 @@ export const AmortizationTable: React.FC<AmortizationTableProps> = ({
                           Pagar
                         </button>
                       ) : (
-                        <span className="inline-flex items-center text-emerald-600 text-[11px] font-semibold">
-                          <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                          Pagado
-                        </span>
+                        <div className="flex flex-col items-center justify-center">
+                          <span className="inline-flex items-center text-emerald-600 text-[11px] font-bold">
+                            <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                            Pagado
+                          </span>
+                          {item.paymentChannel && (
+                            <span className="text-[9px] text-slate-500 font-medium">
+                              {item.paymentChannel === 'cash' ? '💵 Efectivo' : '🏦 Depósito'}
+                              {item.isSplitPayment ? ' • Mixto' : ''}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>
